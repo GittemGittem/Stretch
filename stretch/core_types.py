@@ -1,14 +1,3 @@
-import sys
-from .scope_types import Scope
-
-__types__ = {}
-from garnish import garnish
-@garnish
-def add_type(type, determine=None):
-    if determine is None:
-        determine = type.__determine__
-    __types__[determine] = type
-
 class StretchTerminate(Exception):
     def __init__(self, *objects):
         message = ""
@@ -20,7 +9,7 @@ class StretchSkipline(Exception): pass
 class Stack(list):
     __slots__ = ("single_layer")
     class StackError(StretchTerminate): pass
-    def __init__(self, *iterable, single_layer=False):
+    def __init__(self, *iterable, single_layer=True):
         if single_layer:
             if any([isinstance(obj, Stack) and obj is not self for obj in iterable]):
                 raise Stack.StackError(f"Cannot move vertically in a single layer stack")
@@ -51,7 +40,6 @@ class Stack(list):
         elif isinstance(key, slice):
             return Stack(*list.__getitem__(self.level(), key), single_layer=self.single_layer)
         
-    
     def up(self, levels:int=1):
         if self.single_layer:
             raise Stack.StackError(f"Cannot move vertically in a single layer stack")
@@ -83,13 +71,12 @@ class Stack(list):
             raise Stack.StackError(f"expected {type} at {index} on stack recieved {self.peek(index)}")
         return val
     
-    
     def peek(self, index=0):
         if index > len(self.level()) - 1:
             return None
         return self.level()[index]
 
-    def peek_if(self, type:type, index):
+    def peek_if(self, type:type, index=0):
         val = self.peek(index)
         if not isinstance(val, type):
             return None
@@ -103,6 +90,18 @@ class Stack(list):
 
     def insert(self, value, index=0):
         list.insert(self.level(), index, value)
+
+class Dotpath:
+    __slots__ = ("chain",)
+    def __init__(self, *segments):
+        self.chain = list(segments)
+    
+    def __repr__(self):
+        return f"<{'.'.join([str(seg) for seg in self.chain])}>"
+    
+    def filepath(self, ext=None):
+        if ext is not None: ext = '.' + ext
+        return f"{'/'.join([str(seg) for seg in self.chain])}" + ext or None
 
 class RawToken:
     __slots__ = ("literal",)
@@ -125,80 +124,6 @@ class RawToken:
     def __eq__(self, other):
         if isinstance(other, RawToken):
             return self.literal == other.literal
-        elif isinstance(other, str):
-            return False
         return False
-    
     def __repr__(self):
         return f"(Raw:'{self.literal}')"
-    
-class DotPath:
-    __slots__ = ("chain", "scope")
-    def __init__(self, *chain, scope=None):
-        self.scope = scope
-        self.chain = []
-        for segment in chain:
-            if isinstance(segment, str):
-                for str_seg in segment.strip().split('.'):
-                    identifier = RawToken(str_seg)
-                    
-                    if scope is not None:
-                        if scope.contains(identifier):
-                            val = scope.retrieve(identifier)
-                            if isinstance(val, Scope):
-                                scope = val
-                                self.scope = val
-                            else:
-                                
-                                self.chain.append(val)
-                        else:
-                            
-                            self.chain.append(identifier)
-                                
-                    else:
-                        self.chain.append(identifier)
-            elif isinstance(segment, RawToken):
-                self.chain.append(segment)
-    
-    def __repr__(self):
-        return f"<{'.'.join([str(seg) if not isinstance(seg, RawToken) else seg.literal for seg in self.chain])}>"
-    
-    def extend(self, *segments, scope=None):
-        for segment in segments:
-            if isinstance(segment, str):
-                for str_seg in segment.strip().split('.'):
-                    if scope is not None:
-                        self.chain.append(scope.parse_raw(RawToken(str_seg)))
-                    else:
-                        self.chain.append(RawToken(str_seg))
-            elif isinstance(segment, RawToken):
-                self.chain.append(segment)
-    
-    def file_name(self, ext:str=None) -> str:
-        if ext is not None: ext = '.' + ext
-        return "/".join([name.literal for name in self.chain]) + (ext or "")
-    def path_chain(self):
-        return ".".join([name.literal for name in self.chain])
-    
-    def end(self) -> RawToken:
-        return self.chain[-1]
-
-class Loop:
-    __slots__ = ("scope", "start", "count", "goal")
-    def __init__(self, start_line, goal):
-        self.start = start_line
-        self.goal = goal
-        self.count = 0
-    
-    def loop(self, proc, scope):
-        self.count += 1
-        if self.count < self.goal:
-            scope.current_line = self.start
-            raise StretchSkipline()
-        
-
-class Alias:
-    __slots__ = ("name")
-    
-    def __init__(self, name):
-        self.name = name
