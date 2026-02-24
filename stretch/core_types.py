@@ -1,4 +1,5 @@
 import sys
+from .scope_types import Scope
 
 __types__ = {}
 from garnish import garnish
@@ -8,7 +9,12 @@ def add_type(type, determine=None):
         determine = type.__determine__
     __types__[determine] = type
 
-class StretchTerminate(Exception): pass
+class StretchTerminate(Exception):
+    def __init__(self, *objects):
+        message = ""
+        for object in objects:
+            message += str(object).encode("utf-8").decode("unicode_escape")
+        super().__init__(("\x1b[31m" + message + "\x1b[0m"))
 class StretchSkipline(Exception): pass
 
 class Stack(list):
@@ -16,7 +22,7 @@ class Stack(list):
     class StackError(StretchTerminate): pass
     def __init__(self, *iterable, single_layer=False):
         if single_layer:
-            if any([isinstance(obj, Stack) for obj in iterable]):
+            if any([isinstance(obj, Stack) and obj is not self for obj in iterable]):
                 raise Stack.StackError(f"Cannot move vertically in a single layer stack")
         self.single_layer = single_layer
         super().__init__(iterable)
@@ -58,84 +64,53 @@ class Stack(list):
     
     def push(self, value):
         if self.single_layer:
-            if isinstance(value, Stack):
+            if isinstance(value, Stack) and value is not self:
                 raise Stack.StackError(f"Cannot move vertically in a single layer stack")
         self.level().append(value)
-    def pull(self, index=-1):
+    def pull(self, index=0):
         return self.level().pop(index)
 
-    def pull_if(self, type, index=-1):
+    def pull_if(self, type, index=0):
         val = self.peek(index)
         if isinstance(val, type):
             self.pull(index)
             return val
         else:
             return None
-    def pull_only(self, type, index=-1):
+    def pull_only(self, type, index=0):
         val = self.pull_if(type, index)
         if val is None:
             raise Stack.StackError(f"expected {type} at {index} on stack recieved {self.peek(index)}")
         return val
     
     
-    def peek(self, index=-1):
+    def peek(self, index=0):
         if index > len(self.level()) - 1:
             return None
         return self.level()[index]
 
-    def peek_if(self, index, type:type):
+    def peek_if(self, type:type, index):
         val = self.peek(index)
         if not isinstance(val, type):
             return None
         return val
     def empty(self, level:int=1):
         self.level(level).clear()
-    def copy(self, index = -1):
+    def copy(self, index = 0):
         self.push(self.peek(index))
     def surface(self, index=-1):
         self.push(self.pull(index))
 
-                
-    
-    def insert(self, index, value):
+    def insert(self, value, index=0):
         list.insert(self.level(), index, value)
-    
-    def take(self, *types):
-        taking = []
-        for type in types:
-            if len(self.level(1)) < 1:
-                sorted = None
-                if len(taking) > 0:
-                    sorted = ', '.join([obj.__class__.__name__ + ":" + f"'{str(obj)}'" for obj in taking])
-                raise Stack.StackError(f"stack.take() expected ({", ".join([type.__name__ for type in types])}), recieved {{{sorted or ""}, '...'}} ")
-            if not isinstance(self.peek(), type):
-                sorted = None
-                if len(taking) > 0:
-                    sorted = ', '.join([obj.__class__.__name__ + ":" + f"'{str(obj)}'" for obj in taking])
-                fin_val = self.peek(2)
-                final = fin_val.__class__.__name__ + ":" + f"'{str(fin_val)}'"
-                if sorted is not None:
-                    final = ", " + final
-                raise Stack.StackError(f"stack.take() expected ({", ".join([type.__name__ for type in types])}), recieved {{{(sorted or "") + final}}} ")
-            taking.append(self.pull())
-        return taking
-    
-    def take_if(self, *types):
-        taking = []
-        for type in types:
-            if len(self.level()) < 1:
-                return taking
-            if not isinstance(self.peek(), type):
-                return taking
-            taking.append(self.pull())
-        return taking
-
 
 class RawToken:
     __slots__ = ("literal",)
     __raw__ = {}
     
     def __new__(cls, literal:str, *args):
+        if not isinstance(literal, str):
+            raise StretchTerminate(f"Cannot create a RawToken from {literal}")
         if literal in cls.__raw__:
             instance = cls.__raw__[literal]
         else:
@@ -158,16 +133,30 @@ class RawToken:
         return f"(Raw:'{self.literal}')"
     
 class DotPath:
-    __slots__ = ("chain")
+    __slots__ = ("chain", "scope")
     def __init__(self, *chain, scope=None):
+        self.scope = scope
         self.chain = []
         for segment in chain:
             if isinstance(segment, str):
                 for str_seg in segment.strip().split('.'):
+                    identifier = RawToken(str_seg)
+                    
                     if scope is not None:
-                        self.chain.append(scope.parse_raw(RawToken(str_seg)))
+                        if scope.contains(identifier):
+                            val = scope.retrieve(identifier)
+                            if isinstance(val, Scope):
+                                scope = val
+                                self.scope = val
+                            else:
+                                
+                                self.chain.append(val)
+                        else:
+                            
+                            self.chain.append(identifier)
+                                
                     else:
-                        self.chain.append(RawToken(str_seg))
+                        self.chain.append(identifier)
             elif isinstance(segment, RawToken):
                 self.chain.append(segment)
     
@@ -188,9 +177,26 @@ class DotPath:
     def file_name(self, ext:str=None) -> str:
         if ext is not None: ext = '.' + ext
         return "/".join([name.literal for name in self.chain]) + (ext or "")
+    def path_chain(self):
+        return ".".join([name.literal for name in self.chain])
+    
     def end(self) -> RawToken:
-        return RawToken(self.chain[-1])
+        return self.chain[-1]
+
+class Loop:
+    __slots__ = ("scope", "start", "count", "goal")
+    def __init__(self, start_line, goal):
+        self.start = start_line
+        self.goal = goal
+        self.count = 0
+    
+    def loop(self, proc, scope):
+        self.count += 1
+        if self.count < self.goal:
+            scope.current_line = self.start
+            raise StretchSkipline()
         
+
 class Alias:
     __slots__ = ("name")
     

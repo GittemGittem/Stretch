@@ -4,20 +4,17 @@ from .core_types import RawToken
 
 class Extender:
     def __init__(self):
-        self.__operators__ = __operators__
+        self.__operators__ = __operators__.copy()
         self.__operator_precedence__ = __operator_precedence__.copy()
-        self.__terms__ = __terms__
-        self.__types__ = {}
+        self.__terms__ = __terms__.copy()
         
         self.__direct__ = []
     
     
     def extend(self, proc, scope):
-        for operator in self.__operator_precedence__.sort():
-            scope.__operators__[operator] = self.__operators__[operator]
+        scope.__operators__.update(self.__operators__)
+        scope.__operator_precedence__.update(self.__operator_precedence__)
         scope.__terms__.update(self.__terms__)
-        scope.__types__.update(self.__types__)
-        
         for func in self.__direct__:
             func(proc, scope)
     
@@ -29,23 +26,19 @@ class Extender:
     def __call__(self, func):
         self.__direct__.append(func)
     
+    def add_operator_group(self, name, low=None, high=None):
+        self.__operator_precedence__.group(name, low, high)
+    
     @garnish
-    def operator(self, func, symbol:str, low=None, high=None):
-        if low is not None:
-            low = RawToken(low)
-        if high is not None:
-            high = RawToken(high)
-        self.__operators__[RawToken(symbol)] = func
-        self.__operator_precedence__.add(RawToken(symbol), low, high)
+    def operator(self, func, group:str, symbol:str):
+        symbol = RawToken(symbol)
+        self.__operators__[symbol] = func
+        self.__operator_precedence__.add_members(group, symbol)
         return func
 
     @garnish
     def term(self, func, term:str):
         self.__terms__[RawToken(term)] = func
         return func
-    
-    @garnish
-    def type(self, cls):
-        pass
-    
+
 

@@ -1,61 +1,97 @@
 class PrecedenceGraph:
     def __init__(self):
+        self.groups = {}
         self.lower = {}
         self.higher = {}
         self.nodes = []
+        self.members = {}
+        
+    def copy(self):
+        new = PrecedenceGraph()
+        new.groups = {name: set(members) for name, members in self.groups.items()}
 
-    def add_operator(self, op):
-        if op not in self.nodes:
-            self.nodes.append(op)
+        new.lower = {name: set(lows) for name, lows in self.lower.items()}
+        new.higher = {name: set(highs) for name, highs in self.higher.items()}
 
-    def add(self, operator, low=None, high=None):
-        self.add_operator(operator)
-        if low is not None:
-            self.add_sub(operator, low)
-        if high is not None:
-            self.add_dom(operator, high)
+        new.nodes = list(self.nodes)
+
+        new.members = {name: set(members) for name, members in self.members.items()}
+
+        return new
+
+    
+    def update(self, other):
+        self.groups = {name: set(members) for name, members in other.groups.items()}
+
+        self.lower = {name: set(lows) for name, lows in other.lower.items()}
+        self.higher = {name: set(highs) for name, highs in other.higher.items()}
+
+        self.nodes.extend(other.nodes)
+
+        self.members.update({name: set(members) for name, members in other.members.items()})
+        
+    
+    def group(self, name, low=None, high=None):
+        if name not in self.groups:
+            group = set()
+            self.groups[name] = group
+        else:
+            group = self.groups[name]
+        self.add_node(name)
+        if low is not None: # group that is lower than me
+            self.add_sub(name, low)
+        if high is not None: # group that is higher than me
+            self.add_dom(name, high)
+            
+    def add_sub(self, high, low):
+        if high not in self.lower:
+            self.lower[high] = set()
+        self.lower[high].add(low)
+        if low not in self.higher:
+            self.higher[low] = set()
+        self.higher[low].add(high)
     
     def add_dom(self, low, high):
-        self.add_operator(low)
-        self.add_operator(high)
+        if high not in self.lower:
+            self.lower[high] = set()
+        self.lower[high].add(low)
+        if low not in self.higher:
+            self.higher[low] = set()
+        self.higher[low].add(high)
+        
+    
+    def add_node(self, group_name):
+        if group_name not in self.nodes:
+            self.nodes.append(group_name)
 
-        self.higher.setdefault(low, set()).add(high)
-        self.lower.setdefault(high, set()).add(low)
-
-    def add_sub(self, high, low):
-        self.add_dom(low, high)
-
-    def sort(self):
+    def add_members(self, group, *members):
+        for member in members:
+            self.groups[group].add(member)
+            
+    def sort_group_names(self):
         order = []
-        for op in self.nodes:
+        for group in self.nodes:
             pos = 0
             while pos < len(order):
                 before = order[:pos]
                 after = order[pos:]
-                if any(l in after for l in self.lower.get(op, [])):
+                if any(lower in after for lower in self.lower.get(group, [])):
                     pos += 1
                     continue
-                if any(h in before for h in self.higher.get(op, [])):
+                if any(higher in before for higher in self.higher.get(group, [])):
                     pos += 1
                     continue
                 break
-            order.insert(pos, op)
+            order.insert(pos, group)
+        
         return order
     
-    def update(self, other): # Add all nodes
-        for op in other.nodes:
-            self.add_operator(op) # Add all dominance (low < high) relationships
-        for low, highs in other.higher.items():
-            for high in highs:
-                self.add_dom(low, high)
-        for high, lows in other.lower.items():
-            for low in lows:
-                self.add_sub(high, low)
-
-    def copy(self):
-        instance = PrecedenceGraph()
-        instance.nodes = self.nodes[:]
-        instance.lower = {symbol: set(lower) for symbol, lower in self.lower.items()}
-        instance.higher = {symbol: set(higher) for symbol, higher in self.higher.items()}
-        return instance
-    
+    def sort_groups(self):
+        groups = []
+        for name in self.sort_group_names():
+            groups.append(self.groups[name])
+        return list(reversed(groups))
+        
+        
+                
+        

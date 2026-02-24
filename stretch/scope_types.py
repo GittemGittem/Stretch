@@ -1,4 +1,5 @@
 
+
 type DotPath = None #alias
 
 class Scope:
@@ -58,11 +59,12 @@ class Module(Scope):
             return source.readlines()
     
     def __new__(cls, processor, module_path:DotPath, parent=None):
-        name = module_path.end().literal
-        if name in processor.modules():
-            instance = processor.modules(name)
+        path = module_path.path_chain()
+        if path in processor.modules():
+            instance = processor.modules(path)
         else:
             instance = super().__new__(cls)
+            processor.add_module(path, instance)
         return instance
     
     def register_operator(self, symbol:str, operation):
@@ -73,19 +75,20 @@ class Module(Scope):
         super().__init__(processor, module_path.file_name(), parent)
         self.path = module_path.file_name('str')
         self.write_lines(self.load_module(self.path))
-        self.processor.add_module(self)
+        
         
         self.__operators__ = processor.__operators__
+        self.__operator_precedence__ = processor.__operator_precedence__
         self.__terms__ = processor.__terms__
         self.__types__ = {}
         self.__scope__ = {}
-        
-    def operators(self, symbol=None):
-        if symbol is None:
-            return self.__operators__
-        return self.__operators__[symbol]
+    @property
+    def operators(self):
+        return self.__operators__
+    @property
+    def precedence(self):
+        return self.__operator_precedence__.sort_groups()
     
-    def terms(self, term=None):
-        if term is None:
-            return self.__terms__
-        return self.__terms__[term]
+    @property
+    def terms(self):
+        return self.__terms__
