@@ -1,98 +1,51 @@
-from core_types import Stack, Dotpath, RawToken
-import os
+from scope_types import Scope
+from core_types import Stack, RawToken, Dotpath
 
-class Scope:
-    def __init__(self, processor, *lines):
-        self.processor = processor
-        processor.scope_stack.push(self)
-        
-        self.end = 0
-        self.current_line = 0
-        self.parse_lines(*lines)
-        
-        self.__scope__ = {}
-        
-        self.init()
-    
-    def parse_lines(self, *lines):
-        init_parsed = {}
-        parsed = {}
-        init = False
-        for index in range(len(lines)):
-            line = lines[index]
-            if line.startswith('$'):
-                line = line[1:]
-                init = True
-            tokens = self.parser(line)
-            if init:
-                init_parsed[index] = tokens
-            else:
-                parsed[index] = tokens
-            if index > self.end:
-                self.end = index
-            init = False
-        self.init_lines = init_parsed
-        self.lines = parsed
-            
-    def parser(self, line):
-        return self.processor.parser(line)
+class ScopeVeiw:
+    def __init__(self, scope, start_line=0):
+        self.scope = scope
+        self.current_line = start_line
     
     @property
     def line(self):
-        if self.current_line in self.lines:
-            return self.lines[self.current_line]
+        if self.current_line in self.scope.lines:
+            return self.scope.lines[self.current_line]
         else:
             return None
-
-    def __len__(self):
-        return self.end + 1
     
-    def init(self):
-        current_line = 0
-        while current_line < len(self):
-            if current_line in self.init_lines:
-                self.process(self.init_lines[current_line])
-            current_line += 1
-        
     def step(self):
-        if self.current_line > self.end:
+        if self.current_line > len(self.scope):
             return False
         
         tokens = self.line
-        if tokens:
-            self.process(tokens)
+        if tokens: self.scope.process(tokens)
         self.current_line += 1
         return True
-        
-    def process(self, tokens):
-        self.processor.process(tokens)
+            
     
-class Module(Scope):
-    @staticmethod
-    def load_module(dotpath):
-        with open(dotpath.filepath('str'), 'r') as module_file:
-            return module_file.readlines()
-    def __init__(self, processor, dotpath):
-        super().__init__(processor, *self.load_module(dotpath))
-
 class Processor:
     def __init__(self):
-        self.running = False
+        self.__scopes__ = {}
         self.scope_stack = Stack()
-        self.global_stack = Stack()
-            
+        self.running = False
+    
     def mainloop(self):
         self.running = True
         while self.running:
-            scope = self.scope_stack.peek_if(Scope)
-            if scope is None:
-                self.running = False              
-                return
-            
-            if not scope.step():
-                self.scope_stack.pull()
-            
-    def parser(self, line):
+            view = self.scope_stack.peek_if(ScopeVeiw)
+            if view is None:
+                self.running = False
+            else:
+                if not view.step():
+                    self.scope_stack.pull()
+
+    def push_scope(self, scope, start_line=0):
+        self.scope_stack.push(ScopeVeiw(scope, start_line))
+        
+        
+    
+    
+    def parse(self, line):
         tokens = []
         build_str = []
         str_end = None
@@ -126,15 +79,12 @@ class Processor:
                 case token:
                     tokens.append(RawToken(token))
         return tokens
-    
-    def process(self, tokens):
-        print(tokens)    
-    
-    
+
+    def process(self, scope, tokens):
+        print(tokens)
         
 proc = Processor()
 
-main = Module(proc, Dotpath("main"))
+scope = Scope("main", proc, "hello")
 
 proc.mainloop()
-
