@@ -91,39 +91,3 @@ class Stack(list):
     def insert(self, value, index=0):
         list.insert(self.level(), index, value)
 
-class Dotpath:
-    __slots__ = ("chain",)
-    def __init__(self, *segments):
-        self.chain = list(segments)
-    
-    def __repr__(self):
-        return f"<{'.'.join([str(seg) for seg in self.chain])}>"
-    
-    def filepath(self, ext=None):
-        if ext is not None: ext = '.' + ext
-        return f"{'/'.join([str(seg) for seg in self.chain])}" + ext or None
-
-class RawToken:
-    __slots__ = ("literal",)
-    __raw__ = {}
-    
-    def __new__(cls, literal:str, *args):
-        if not isinstance(literal, str):
-            raise StretchTerminate(f"Cannot create a RawToken from {literal}")
-        if literal in cls.__raw__:
-            instance = cls.__raw__[literal]
-        else:
-            instance = super().__new__(cls)
-            instance.literal = literal
-            cls.__raw__[literal] = instance
-        return instance
-    
-    def __hash__(self):
-        return hash((RawToken, self.literal))
-    
-    def __eq__(self, other):
-        if isinstance(other, RawToken):
-            return self.literal == other.literal
-        return False
-    def __repr__(self):
-        return f"(Raw:'{self.literal}')"
