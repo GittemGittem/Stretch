@@ -26,7 +26,11 @@ class PrecedenceGraph:
         self.lower = {name: set(lows) for name, lows in other.lower.items()}
         self.higher = {name: set(highs) for name, highs in other.higher.items()}
 
-        self.nodes.extend(other.nodes)
+        new_nodes = []
+        for node in other.nodes:
+            if node not in self.nodes:
+                new_nodes.append(node)
+        self.nodes.extend(new_nodes)
 
         self.members.update({name: set(members) for name, members in other.members.items()})
         

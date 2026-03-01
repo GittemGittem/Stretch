@@ -1,75 +1,108 @@
 from lark import Transformer, Lark
-from .lang_types import Op, RawToken, Dotpath, Expression, Block, Assign, CallBlock, CallCoreWord, Coreword
+from .lang import SetVar, RawToken, Op, Statement, Expression, Block, Dotpath, Pointer
+import codecs
 
 class StretchBuilder(Transformer):
-    
-    OPERATOR = Op
-    NAME = RawToken
-    
-    COMMA = Op
-    
-    def dotpath(self, path):
-        return Dotpath(*[seg for seg in path if isinstance(seg, RawToken)])
-    
-    def start(self, statements):
-        return statements
-    def use_coreword(self, cwst):
-        name = Coreword(cwst[0])
-        args = tuple(arg for arg in cwst[2].children if not isinstance(arg, Op))
-        return [CallCoreWord(name, args)]
-
-    
-    def reg_statement(self, stat):
-        return stat[0], "regular"
-    def init_statement(self, stat):
-        return stat[1][0], "init"
+    def start(self, code):
+        init_statements = {}
+        statements = {}
+        line = 0
+        for stat, init in [st for st in code if st is not None]:
+            if init:
+                init_statements[line] = stat
+            else:
+                statements[line] = stat
+            line += 1
+        return Block(statements, init_statements, line)
     def statement(self, stat):
-        return stat[0]
+        return [part for part in stat if part is not None], False
+    def init_statement(self, stat):
+        return [part for part in stat if part is not None], True
+    def section(self, section):
+        return section
+    def part(self, pt):
+        return pt[0]
     
+    def NEWLINE(self, nwl):
+        return None
+    def l_brack(self, brack):
+        return None
+    def r_brack(self, brack):
+        return None    
+    
+    def init(self, init):
+        return None
+    def COMMA(self, comma):
+        return None
+    def semi(self, semi):
+        return None
+    
+
     def atom(self, atom):
         return atom[0]
-    def par_term(self, exp):
-        return Expression(exp[1:-1])
     def term(self, term):
-        return term[0]
-    def expr(self, exp):
-        return Expression(exp)
+        while isinstance(term, list):
+            term = term[0]
+        return term
+    def par_term(self, term):
+        return term[1:-1]
+    def expr(self, expr):
+        if len(expr) == 1:
+            return expr[0]
+        return Expression(expr)
     
-    def STRING(self, text):
-        return text[1:-1].encode("utf-8").decode()
-    def NUM(self, number):
-        if '.' in number:
-            return float(number)
-        else:
-            return int(number)
     def block(self, block):
-        return Block(block[1:-1])
-    def params(self, params):
-        return tuple(param for param in params if isinstance(param, RawToken) and not isinstance(param, Op))
-    def args(self, args):
-        return tuple(arg for arg in args if not isinstance(arg, Op))[1:-1]
-    def def_block(self, block):
-        params = block[0]
-        code = block[-1]
-        code.params = params
-        return code
-    def call_block(self, block):
-        name = block[0]
-        args = block[1]
-        return [CallBlock(name, args)]
+        return block[1]
+
     
-    def assign(self, assignment):
-        return [Assign(assignment[0]), *assignment[2:]]
+    def STRING(self, str_tok):
+        inner = str_tok[1:-1] # remove quotes return
+        return codecs.decode(inner, "unicode_escape")
+    def string_content(self, content):
+        return content
+    def STRING_TEXT(self, text):
+        return str(text)
+    def brace_group(self, group):
+        if isinstance(group[0], list):
+            group = group[0]
+        return '"' + "".join(group) + '"'
+    def brack_group(self, group):
+        if isinstance(group[0], list):
+            group = group[0]
+        return "'" + "".join(group) + "'"
+    
+    def NUM(self, num_tok):
+        return float(num_tok) if '.' in num_tok else int(num_tok)
+    def NAME(self, token):
+        return RawToken(str(token))
+    def access(self, acc):
+        return None
+    def MARK(self, mark):
+        return True
+    
+    def name(self, path):
+        if len(path) > 1:
+            return Dotpath(*[seg for seg in path if seg is not None])
+        return path[0]
+    def pointer(self, point):
+        mark, reference = point
+        return Pointer(reference, mark or False)
         
+    OPERATOR = Op
+    def set(self, set_tok):
+        return SetVar(set_tok[0])
+    def group(self, group):
+        return tuple([item for item in group if item is not None])
         
 
 grammar = r"""
-    OPERATOR: OP OP_CHAR* | OP_CHAR* OP
+    OPERATOR: OP+ OP_CHAR* OP* | OP* OP_CHAR* OP+
     
     OP: /[+\-*\/=<>!&%^~]/
     OP_CHAR: /[A-Za-z0-9_]/
 
-    COLON : ":"
+    colon : ":"
+    semi : ";"
     access : "."
     l_access : "<"
     r_access : ">"
@@ -79,48 +112,44 @@ grammar = r"""
     COMMA : ","
     l_brack : "{"
     r_brack : "}"
-    semi : ";"
-    CORE : "|"
+    MARK : "@"
         
-    start: (statement (semi statement)*)+
-    statement: reg_statement
-            | init_statement
-    reg_statement: assign
-                | call_block
-                | use_coreword
-    init_statement: init reg_statement
+    start: (statement semi | init_statement semi)*
+    statement: [set] expr+
+    init_statement: init [set] expr+
+    set: (name | group) ":"
     
-    atom: NAME
-    | dotpath
-    | STRING
+    block: l_brack start r_brack
+    
+    newline: NEWLINE*
+    
+    atom: STRING
     | NUM
-    | call_block
+    | name
+    | pointer
+    | block
+    | group
+    
+    group: atom (COMMA atom)+
+    
+    
 
     par_term: (l_par expr r_par)
-
     term: atom
     | par_term
-
     expr: term (OPERATOR term)*
     
-    params: l_par [NAME (COMMA NAME)*] r_par
-    def_block: params block
-    block: l_brack statement* r_brack
-    args: l_par [(expr | block | def_block) (COMMA (expr | block | def_block))*] r_par
-    call_block: (NAME|dotpath) args
-    
-    assign: (NAME | dotpath) COLON (expr | def_block | block)
-        | (NAME | dotpath) COLON use_coreword
-    
-    dotpath: NAME access NAME (access NAME)*
-    core_args : (expr | block | def_block) (COMMA (expr | block | def_block))*
-    use_coreword : NAME CORE core_args CORE
+    pointer: "[" [MARK] expr "]"
+    name: NAME (access NAME)*
+    %import common.NEWLINE
     %import common.CNAME -> NAME
     %import common.ESCAPED_STRING -> STRING
+
     %import common.SIGNED_NUMBER -> NUM
     
     %import common.WS
     %ignore WS
+
 
 """
 

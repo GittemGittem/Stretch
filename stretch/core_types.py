@@ -1,14 +1,6 @@
-class StretchTerminate(Exception):
-    def __init__(self, *objects):
-        message = ""
-        for object in objects:
-            message += str(object).encode("utf-8").decode("unicode_escape")
-        super().__init__(("\x1b[31m" + message + "\x1b[0m"))
-class StretchSkipline(Exception): pass
-
 class Stack(list):
     __slots__ = ("single_layer")
-    class StackError(StretchTerminate): pass
+    class StackError(Exception): pass
     def __init__(self, *iterable, single_layer=True):
         if single_layer:
             if any([isinstance(obj, Stack) and obj is not self for obj in iterable]):
@@ -54,7 +46,7 @@ class Stack(list):
         if self.single_layer:
             if isinstance(value, Stack) and value is not self:
                 raise Stack.StackError(f"Cannot move vertically in a single layer stack")
-        self.level().append(value)
+        self.level().insert(value, 0)
     def pull(self, index=0):
         return self.level().pop(index)
 
@@ -91,3 +83,43 @@ class Stack(list):
     def insert(self, value, index=0):
         list.insert(self.level(), index, value)
 
+class Channel:
+    def __init__(self):
+        self.channels = {}
+        
+    def emit(self, id, value):
+        self.channels[id] = value
+        
+    def clear(self):
+        self.channels.clear()
+        
+    def receive(self, id, default=None):
+        value = default
+        if id in self.channels:
+            value = self.channels[id]
+        return value
+    
+    def take(self, id, default=None):
+        value = default
+        if id in self.channels:
+            value = self.channels[id]
+            del self.channels[id]
+        return value
+class StretchTerminate(Exception):
+    def __init__(self, *objects):
+        message = ""
+        for object in objects:
+            message += str(object)
+        if message == "":
+            message = "Exception with no defined message"
+        super().__init__(("\x1b[31m" + message + "\x1b[0m").encode().decode())
+        
+class Promise:
+    def __init__(self, block):
+        self.return_stack = block.return_stack
+    
+    def load(self):
+        if len(self.return_stack) > 0:
+            return self.return_stack.pull()
+        else:
+            return None
