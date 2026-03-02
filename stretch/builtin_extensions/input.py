@@ -2,12 +2,12 @@ from stretch.extension import Extender
 
 __extension__ = Extender()
 with __extension__ as e:
-    @e.term.use("in")
+    @e.command.use("in")
     def get_input(interpreter, view, tokens):
         message = tokens.pull_if(str) or ""
         tokens.insert(input(message))
     
-    @e.term.use("ins")
+    @e.command.use("ins")
     def get_input(interpreter, view, tokens):
         sentinal = tokens.pull_only(str)
         message = tokens.pull_if(str) or ""

@@ -51,11 +51,10 @@ class Interpreter:
         
             try:
                 if not view.step(self):
-                    self.view_stack.pull()
+                    view = self.view_stack.pull()
             except Exception as e:
                 if len(self.try_stack) > 0:
                     try_view = self.try_stack.pull()
-                    view = self.view_stack.pull()
                     while view is not try_view:
                         view = self.view_stack.pull()
                     self.exception_stack.push(e)

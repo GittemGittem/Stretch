@@ -1,18 +1,19 @@
-from .core import precedence
+from .precedence import PrecedenceGraph
+from .core_types import CommandInterface
 from garnish import garnish
 
 class Extender:
     
     def __init__(self):
         self.operators = {}
-        self.terms = {}
-        self.precedence = precedence.copy()
+        self.commands = CommandInterface()
+        self.precedence = PrecedenceGraph()
         
         self.direct = []
     
     def extend(self, scope):
         scope.operators.update(self.operators)
-        scope.terms.update(self.terms)
+        scope.commands.update(self.commands)
         scope.precedence.update(self.precedence)
         
         for func in self.direct:
@@ -35,8 +36,8 @@ class Extender:
         self.operators[symbol] = func
     
     @garnish
-    def term(self, func, name:str):
-        self.terms[name] = func
+    def command(self, func, *switches):
+        self.commands[*switches] = func
     
     
         

@@ -1,5 +1,5 @@
 from lark import Transformer, Lark
-from .lang import SetVar, RawToken, Op, Statement, Expression, Block, Dotpath, Pointer
+from .lang import SetVar, RawToken, Op, Statement, Expression, Block, Dotpath, Pointer, Command, Switch, Dummy
 import codecs
 
 class StretchBuilder(Transformer):
@@ -80,6 +80,12 @@ class StretchBuilder(Transformer):
     def MARK(self, mark):
         return True
     
+    
+    def switch(self, switch):
+        return Switch(switch[0])
+    def command(self, cmd):
+        return Command(cmd[-1].literal, *[switch.literal for switch in cmd[:-1] if switch is not None])
+    
     def name(self, path):
         if len(path) > 1:
             return Dotpath(*[seg for seg in path if seg is not None])
@@ -87,7 +93,10 @@ class StretchBuilder(Transformer):
     def pointer(self, point):
         mark, reference = point
         return Pointer(reference, mark or False)
-        
+    
+    def dummy(self, dummy):
+        return Dummy(dummy[0])
+    
     OPERATOR = Op
     def set(self, set_tok):
         return SetVar(set_tok[0])
@@ -96,6 +105,8 @@ class StretchBuilder(Transformer):
         
 
 grammar = r"""
+    
+    
     OPERATOR: OP+ OP_CHAR* OP* | OP* OP_CHAR* OP+
     
     OP: /[+\-*\/=<>!&%^~]/
@@ -126,13 +137,18 @@ grammar = r"""
     atom: STRING
     | NUM
     | name
+    | command
     | pointer
     | block
     | group
+    | dummy
+    
+    dummy: "<-" expr
+    
+    switch:  "@" NAME
+    command: switch* (("(" NAME ")") | (NAME "->"))
     
     group: atom (COMMA atom)+
-    
-    
 
     par_term: (l_par expr r_par)
     term: atom
@@ -141,6 +157,9 @@ grammar = r"""
     
     pointer: "[" [MARK] expr "]"
     name: NAME (access NAME)*
+    
+    COMMENT: /\#[^\n]*/
+    %ignore COMMENT
     %import common.NEWLINE
     %import common.CNAME -> NAME
     %import common.ESCAPED_STRING -> STRING

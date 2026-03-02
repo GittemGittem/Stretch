@@ -1,4 +1,4 @@
-from .core import precedence, operators, terms
+from .core import precedence, operators, commands
 from .core_types import StretchTerminate, Stack, Promise
 
 class SetVar:
@@ -13,6 +13,9 @@ class RawToken:
     __raw__ = {}
     def __init_subclass__(cls):
         cls.__raw__ = dict()
+    
+    def __deepcopy__(self, memo):
+        return self
     
     def __new__(cls, literal:str):
         if issubclass(type(literal), RawToken):
@@ -58,6 +61,8 @@ class Expression:
             if not isinstance(val, Op):
                 if isinstance(val, RawToken):
                     copy[index] = view.get_var(val)
+                if isinstance(val, Dotpath):
+                    copy[index] = view.get_var(val)
                 elif isinstance(val, Expression):
                     copy[index] = val.load_vars(view)
             
@@ -94,7 +99,29 @@ class Expression:
                     undefined_ops.append(term)
             raise StretchTerminate(f"Unresolved expression, undefined operators: {undefined_ops} in {solution}")
         return solution[0]
-                                    
+class Dummy:
+    def __init__(self, expr):
+        self.value = expr
+    def load(self):
+        from copy import deepcopy
+        return deepcopy(self.value)
+        
+
+        
+class Switch(RawToken): pass
+class Command:
+    __slots__ = ("command", "switches")
+    def __init__(self, command:str, *switches:str):
+        self.command = command
+        self.switches = switches
+    
+    def __iter__(self):
+        yield self.command
+        yield self.switches
+    
+    def __repr__(self):
+        return f"{self.command}: @{' @'.join(self.switches)}>"
+                              
 class Dotpath:
     __slots__ = ("chain",)
     def __init__(self, *chain):
@@ -102,9 +129,9 @@ class Dotpath:
     
     def file(self, ext = None):
         if ext is not None: ext = "." + ext
-        return "/".join([str(seg) for seg in self.chain]) + ext or ""
+        return "/".join([str(seg.literal) if isinstance(seg, RawToken) else str(seg) for seg in self.chain]) + (ext or "")
     def dot(self):
-        return ".".join([str(seg) for seg in self.chains])
+        return ".".join([str(seg.literal) if isinstance(seg, RawToken) else str(seg) for seg in self.chain])
     
     
     def __repr__(self):
@@ -129,14 +156,15 @@ class Statement:
 
 class Block:
     def __init__(self, stat, init, end):
-        self.initialize = True
         self.stat = stat
         self.init = init
         self.end = end
         
+        self.run_counter = 0
+        
         self.precedence = precedence.copy()
         self.operators = operators.copy()
-        self.terms = terms.copy()
+        self.commands = commands
         
         self.return_stack = Stack()
         self.__scope__ = {}
@@ -144,7 +172,6 @@ class Block:
     @property
     def scope(self):
         return self
-    
     
     def set_var(self, keys, values):
         if not isinstance(keys, tuple):
@@ -158,7 +185,7 @@ class Block:
                 chain = token.chain
                 index = 0
                 while index < len(chain) - 1:
-                    segment = chain[index]
+                    segment = chain[index].literal
                     if segment in set_scope:
                         val = set_scope[segment]
                         if isinstance(val, Block):
@@ -168,16 +195,19 @@ class Block:
                     raise StretchTerminate(f"Encountered a gap in {chain} at {segment}")
                 else:
                     token = chain[-1]
-            set_scope[token] = values[key_index]
+            name = token.literal
+            set_scope[name] = values[key_index]
     def get_var(self, token):        
         get_scope = self.__scope__
         if isinstance(token, Dotpath):
             chain = token.chain
             index = 0
             while index < len(chain) - 1:
-                segment = chain[index]
+                segment = chain[index].literal
                 if segment in get_scope:
                     val = get_scope[segment]
+                    if isinstance(val, Promise):
+                        val = val.load()
                     if isinstance(val, Block):
                         get_scope = val.__scope__
                         index += 1
@@ -185,36 +215,39 @@ class Block:
                 raise StretchTerminate(f"Encountered a break in {chain} at index {index}: {segment}")
             else:
                 token = chain[-1]
-                if token not in get_scope:
+                if token.literal not in get_scope:
                     raise StretchTerminate(f"Scope {chain[-2].literal} in chain {chain} does not contain {chain[-1].literal}")
-        if token not in get_scope:
+        if token.literal not in get_scope:
             raise StretchTerminate(f"No '{token.literal}' in scope.")
-        value = get_scope[token]
+        
+        name = token.literal
+        value = get_scope[name]
         if isinstance(value, Promise):
             value = value.load()
-            get_scope[token] = value
-        return value
-            
+            get_scope[name] = value
+        return value       
     
     def process_section(self, interpreter, view, section):
         index = len(section) - 1
         
         while index >= 0:
             match section[index]:
+                case dummy if isinstance(dummy, Dummy):
+                    section.pull(index)
+                    section.insert(dummy.load(), index)
                 case setvar if isinstance(setvar, SetVar):
-                    if setvar.token in self.terms:
+                    if setvar.token in self.operators:
                         raise StretchTerminate(f"Cannot override term {setvar.token.literal} with a variable.")
                     section.pull(index)
                     view.set_var(setvar.token, section.pull(index))
-                case term if isinstance(term, RawToken) and term.literal in self.terms:
+                case command if isinstance(command, Command):
                     tokens = section[index + 1:]
                     del section[index:]
-                    self.terms[term.literal](interpreter, view, tokens)
+                    self.commands[command](interpreter, view, tokens)
                     section.extend(tokens)
                 case expr if isinstance(expr, (Expression, Dotpath, RawToken, tuple)):
                     section.pull(index)
                     section.insert(self.process_expr(interpreter, view, expr), index)
-
                 
             index -= 1
     def process_expr(self, interpreter, view, expr):
@@ -232,7 +265,10 @@ class Block:
                         result.append(key)
                 return tuple(result)
             case token if isinstance(token, RawToken):
-                if token in self.__scope__:
+                if token.literal in self.__scope__:
                     return view.get_var(token)
                 else:
                     raise StretchTerminate(f"Unbound token {token}")
+
+
+    
