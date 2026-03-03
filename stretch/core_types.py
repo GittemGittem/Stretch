@@ -93,8 +93,11 @@ class Channel:
         
     def clear(self):
         self.channels.clear()
-        
-    def receive(self, id, default=None):
+    def erase(self, channel):
+        if channel in self.channels:
+            del self.channels[channel]
+    
+    def look(self, id, default=None):
         value = default
         if id in self.channels:
             value = self.channels[id]

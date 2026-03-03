@@ -136,23 +136,21 @@ class Dotpath:
     
     def __repr__(self):
         return f"<{'.'.join([str(seg) for seg in self.chain])}>"
-
-class Pointer:
-    __slots__ = ("reference", "marked")
-    def __init__(self, obj, mark=False):
-        self.marked = mark
-        self.reference = obj
-    
-    def __repr__(self):
-        return f"[{self.reference}]"
         
-
 class Statement:
     def __init__(self, sections):
         self.sections = sections
     def __iter__(self):
         for section in self.sections:
             yield section
+
+class MarkedArray(list):
+    def __repr__(self):
+        return f"@{super().__repr__()}"
+
+class MarkedGroup(tuple):
+    def __repr__(self):
+        return f"@{super().__repr__()}"
 
 class Block:
     def __init__(self, stat, init, end):
@@ -268,7 +266,7 @@ class Block:
             case keys if isinstance(keys, tuple):
                 result = []
                 for key in keys:
-                    if key in self.__scope__:
+                    if isinstance(key, (RawToken, Dotpath)):
                         result.append(view.get_var(key))
                     else:
                         result.append(key)

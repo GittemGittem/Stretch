@@ -1,5 +1,5 @@
 from lark import Transformer, Lark
-from .lang import SetVar, RawToken, Op, Statement, Expression, Block, Dotpath, Pointer, Command, Switch, Dummy
+from .lang import SetVar, RawToken, Op, Expression, Block, Dotpath, Command, Switch, Dummy, MarkedArray, MarkedGroup
 import codecs
 
 class StretchBuilder(Transformer):
@@ -41,7 +41,7 @@ class StretchBuilder(Transformer):
     def atom(self, atom):
         return atom[0]
     def term(self, term):
-        while isinstance(term, list):
+        if isinstance(term, list):
             term = term[0]
         return term
     def par_term(self, term):
@@ -77,8 +77,7 @@ class StretchBuilder(Transformer):
         return RawToken(str(token))
     def access(self, acc):
         return None
-    def MARK(self, mark):
-        return True
+    
     
     
     def switch(self, switch):
@@ -90,9 +89,15 @@ class StretchBuilder(Transformer):
         if len(path) > 1:
             return Dotpath(*[seg.literal for seg in path if seg is not None])
         return path[0]
-    def pointer(self, point):
-        mark, reference = point
-        return Pointer(reference, mark or False)
+    def array(self, array):
+        return [item for item in array if item is not None]
+    def group(self, group):
+        return tuple([item for item in group if item is not None])
+    def marked_array(self, array):
+        return MarkedArray(array)
+    def marked_group(self, group):
+        return MarkedGroup(group)
+
     
     def dummy(self, dummy):
         return Dummy(dummy[0])
@@ -100,8 +105,7 @@ class StretchBuilder(Transformer):
     OPERATOR = Op
     def set(self, set_tok):
         return SetVar(set_tok[0])
-    def group(self, group):
-        return tuple([item for item in group if item is not None])
+    
         
 
 grammar = r"""
@@ -128,7 +132,8 @@ grammar = r"""
     start: (statement semi | init_statement semi)*
     statement: [set] expr+
     init_statement: init [set] expr+
-    set: (name | group) ":"
+    set: (name | set_group) ":"
+    set_group: name ("," name)*
     
     block: l_brack start r_brack
     
@@ -138,24 +143,29 @@ grammar = r"""
     | NUM
     | name
     | command
-    | pointer
-    | block
+    | array
+    | marked_array
     | group
+    | marked_group
+    | block
     | dummy
     
     dummy: "<-" expr
     
     switch:  "@" NAME
-    command: switch* (("(" NAME ")") | (NAME "->"))
+    command: switch* ((NAME "?")|(NAME "->"))
     
-    group: atom (COMMA atom)+
+    
 
     par_term: (l_par expr r_par)
     term: atom
     | par_term
     expr: term (OPERATOR term)*
     
-    pointer: "[" [MARK] expr "]"
+    marked_array: "@" "[" [atom ("," atom)*] "]"
+    array: "[" [atom ("," atom)*] "]"
+    marked_group: "@" "(" [expr ("," expr)*] ")"
+    group: "(" [expr ("," expr)*] ")"
     name: NAME (access NAME)*
     
     COMMENT: /\#[^\n]*/

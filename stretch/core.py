@@ -152,24 +152,16 @@ def enter_inline(interpreter, view, tokens:Stack):
 # FUNCTIONS
 @add_command.use("def")
 def define(interpreter, view, tokens):
-    from .lang import Pointer, Block
-    params = tokens.pull_if(Pointer) or ()
-    if isinstance(params, Pointer):
-        params = params.reference
-    if not isinstance(params, tuple):
-        params = (params,)
+    from .lang import Block
+    params = tokens.pull_if(list) or []
     block = tokens.pull_only(Block)
     tokens.push(Function(block, params))
-    
+    # TCLSH REMEMBER
 @add_command.use("def", "method")
 def define(interpreter, view, tokens):
-    from .lang import Pointer, Block
+    from .lang import Block
     self = tokens.pull_only(Block)
-    params = tokens.pull_if(Pointer) or ()
-    if isinstance(params, Pointer):
-        params = params.reference
-    if not isinstance(params, tuple):
-        params = (params,)
+    params = tokens.pull_if(list) or []
     block = tokens.pull_only(Block)
     block.__scope__["self"] = self
     tokens.push(Function(block, params))
@@ -210,23 +202,6 @@ def extend_class(interpreter, view, tokens):
     interpreter.view_stack.push(InitView(class_body))
     tokens.push(Class(class_body))
     
-
-    
-@add_command.use("bind")
-def bind(interpreter, view, tokens):
-    from .lang import Pointer, Block
-    block = tokens.pull_only(Block)
-    properties = tokens.pull_only(Pointer).reference
-    if not isinstance(properties, tuple):
-        properties = (properties,)
-    values = tokens.pull()
-    if not isinstance(values, tuple):
-        values = (values,)
-    if len(properties) != len(values):
-        raise StretchTerminate()
-    scope_dict = block.__scope__
-    for index in range(len(properties)):
-        scope_dict[properties[index].literal] = values[index]
     
     
 # TERMINATING BLOCKS
@@ -336,9 +311,8 @@ def make_exception(interpreter, view, tokens:Stack):
 
 @add_command.use("import")
 def import_module(interpreter, view, tokens:Stack):
-    from .lang import Pointer
-    pointer = tokens.pull_only(Pointer)
-    dotpath = pointer.reference
+    pointer = tokens.pull_only(list)
+    dotpath = pointer[0]
     dot = dotpath.dot()
     if dot in interpreter.__modules__:
         scope = interpreter.__modules__[dot]
@@ -354,11 +328,11 @@ def import_module(interpreter, view, tokens:Stack):
     tokens.insert(scope)
 @add_command.use("extend")
 def import_extension(interpreter, view, tokens:Stack):
-    from .lang import Pointer
-    pointer = tokens.pull_only(Pointer)
-    path = pointer.reference
+    from .lang import MarkedArray
+    pointer = tokens.pull_only(list)
+    path = pointer[0]
     dot = path.dot()
-    if pointer.marked:
+    if isinstance(pointer, MarkedArray):
         if dot in interpreter.__builtin__:
             extender = interpreter.__builtin__[dot]
         else:
@@ -396,50 +370,39 @@ def pull_stack(interpreter, view, tokens:Stack):
 # global channels
 @add_command.use("channel", "emit")
 def emit_channel(interpreter, view, tokens:Stack):
-    from .lang import Pointer
-    ids = tokens.pull_only(Pointer).reference
-    match ids:
-        case ids if isinstance(ids, tuple):
-            vals = tokens.pull()
-            if not isinstance(vals, tuple):
-                vals = tuple([vals for _ in range(len(ids))])
-            for index in range(len(ids)):
-                interpreter.channels.emit(ids[index], vals[index])
-        case id:
-            interpreter.channels.emit(id, tokens.pull())
+    ids = tokens.pull_only(list)
+    vals = tokens.pull()
+    if not isinstance(vals, tuple):
+        vals = tuple([vals for _ in range(len(ids))])
+    for index in range(len(ids)):
+        interpreter.channels.emit(ids[index], vals[index])
                 
     
 @add_command.use("channel", "look")
 def recieve_channel(interpreter, view, tokens:Stack):
-    from .lang import Pointer
-    match tokens.pull_only(Pointer).reference:
-        case ids if isinstance(ids, tuple):
-            for id in ids:
-                tokens.push(interpreter.channels.receive(id))
-        case id:
-            tokens.push(interpreter.channels.receive(id))
+    ids = tokens.pull_only(list)
+    for id in ids:
+        tokens.push(interpreter.channels.look(id))
 
 @add_command.use("channel", "take")
 def take_channel(interpreter, view, tokens:Stack):
-    from .lang import Pointer
-    ids = tokens.pull_only(Pointer).reference
-    if isinstance(ids, tuple):
-        result = []
-        for id in ids:
-            result.append(interpreter.channels.take(id))
-        tokens.push(tuple(result))
+    ids = tokens.pull_only(list)
+
+    if any([id is None for id in ids]):
         return
-    tokens.push(interpreter.channels.take(ids))
+    result = []
+    for id in ids:
+        result.append(interpreter.channels.take(ids))
+    tokens.push(tuple(result))
+    
 
 @add_command.use("channel", "on")
 def on_channel(interpreter, view, tokens:Stack):
-    from .lang import RawToken, Block, Pointer
-    ids = tokens.pull_only(Pointer).reference
+    from .lang import RawToken, Block
+    ids = tokens.pull_only(list)
     block = tokens.pull_only(Block)
-    if not isinstance(ids, tuple):
-        ids = (ids,)
     for id in ids:
-        if interpreter.channels.receive(id) is None:
+        if interpreter.channels.look(id) is None:
             return
     from .scope_types import HereView, InitHereView
     enter_view = HereView(view.scope, block)
@@ -448,12 +411,23 @@ def on_channel(interpreter, view, tokens:Stack):
     interpreter.view_stack.insert(init_view)
     tokens.push(block)
 
+@add_command.use("channel", "clear")
+def clear_channels(interpreter, view, tokens:Stack):
+    interpreter.channels.clear()
+@add_command.use("channel", "erase")
+def erase_channels(interpreter, view, tokens:Stack):
+    ids = tokens.pull_only(list)
+    for id in ids:
+        interpreter.channels.erase(id)
 @add_command.use("open")
-def open_pointer(interpreter, view, tokens:Stack):
-    from .lang import Pointer, Expression
-    point = tokens.pull_only(Pointer)
-    val = point.reference
-    tokens.insert(view.scope.process_expr(interpreter, view, val))
+def open_array(interpreter, view, tokens:Stack):
+    from .lang import Expression
+    group = tokens.pull_only(list)
+    if len(group) > 1:
+        group = tuple(group)
+    else:
+        group = group[0]
+    tokens.insert(view.scope.process_expr(interpreter, view, group))
 
 @add_command.use("Scope")
 def get_scope(interpreter, view, tokens:Stack):
