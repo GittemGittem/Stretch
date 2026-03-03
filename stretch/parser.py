@@ -88,7 +88,7 @@ class StretchBuilder(Transformer):
     
     def name(self, path):
         if len(path) > 1:
-            return Dotpath(*[seg for seg in path if seg is not None])
+            return Dotpath(*[seg.literal for seg in path if seg is not None])
         return path[0]
     def pointer(self, point):
         mark, reference = point

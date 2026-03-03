@@ -181,8 +181,7 @@ def call(interpreter, view, tokens):
     for param in foo.params:
         args.append(tokens.pull())
     foo.call(interpreter, args)
-        
-    tokens.push(Promise(foo))
+    tokens.push(Promise(foo.block))
     
 # CLASSES
 @add_command.use("class")
@@ -198,7 +197,7 @@ def make_class(interpreter, view, tokens):
 @add_command.use("class", "instance")
 def new_instance(interpreter, view, tokens):
     cls = tokens.pull_only(Class)
-    tokens.push(cls.new(interpreter, tokens))
+    cls.new(interpreter, tokens)
     
 @add_command.use("class", "extend")
 def extend_class(interpreter, view, tokens):
@@ -440,7 +439,7 @@ def on_channel(interpreter, view, tokens:Stack):
     if not isinstance(ids, tuple):
         ids = (ids,)
     for id in ids:
-        if interpreter.channels.receive(id.literal) is None:
+        if interpreter.channels.receive(id) is None:
             return
     from .scope_types import HereView, InitHereView
     enter_view = HereView(view.scope, block)

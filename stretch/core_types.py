@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 class Stack(list):
     __slots__ = ("single_layer")
     class StackError(Exception): pass
@@ -125,7 +127,7 @@ class Promise:
         
 class CommandInterface:
     def __init__(self):
-        self.commands = {}
+        self.commands = dict()
     def __setitem__(self, keys, command):
         index = 0
         current_dict = self.commands
@@ -138,7 +140,9 @@ class CommandInterface:
         dict.__setitem__(current_dict, '.', command)
     
     def __deepcopy__(self, memo):
-        return self
+        new = CommandInterface()
+        new.update(self)
+        return new
     
     def __getitem__(self, command):
         command, switches = command
@@ -164,7 +168,7 @@ class CommandInterface:
                     follow(level + (key,), value)
         follow((), other.commands)
     def copy(self):
-        return self
+        return deepcopy(self)
     
 class Function:
     def __init__(self, block, params):
@@ -180,7 +184,7 @@ class Function:
         if args_length != params_length:
             raise StretchTerminate(f"Function expected {params_length} arguments, recieved {args_length}")
         for index, name in enumerate(self.params):
-            self.block.set_var(name, args[index])
+            self.block[name] = args[index]
         from .scope_types import View, InitView
         interpreter.view_stack.push(View(self.block))
         interpreter.view_stack.push(InitView(self.block))
@@ -196,15 +200,12 @@ class Class:
         from .core import call
         if "__new__" in self.block.__scope__:
             __new__ = self.block.__scope__["__new__"]
-            __new__.block.__scope__["cls"] = self.block
-            call(interpreter, 0, Stack(__new__, *tokens))
-            return Promise(__new__)
+            __new__.block["cls"] = self.block
+            tokens.insert(__new__)
+            call(interpreter, 0, tokens)
         else:
             instance = Block({}, {}, 0)
-            instance.__scope__["__class__"] = self.block
+            instance["__class__"] = self.block
             return instance
-            
-    
-    def extend(self, block, params):
-        return Class(block, params or self.params, self)
+        
         

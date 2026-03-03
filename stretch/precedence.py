@@ -9,7 +9,6 @@ class PrecedenceGraph:
     def copy(self):
         new = PrecedenceGraph()
         new.groups = {name: set(members) for name, members in self.groups.items()}
-
         new.lower = {name: set(lows) for name, lows in self.lower.items()}
         new.higher = {name: set(highs) for name, highs in self.higher.items()}
 
@@ -21,8 +20,7 @@ class PrecedenceGraph:
 
     
     def update(self, other):
-        self.groups = {name: set(members) for name, members in other.groups.items()}
-
+        self.groups.update({name: set(members) for name, members in other.groups.items()})
         self.lower = {name: set(lows) for name, lows in other.lower.items()}
         self.higher = {name: set(highs) for name, highs in other.higher.items()}
 

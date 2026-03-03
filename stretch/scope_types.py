@@ -16,8 +16,6 @@ class View:
     
     def step(self, interpreter):
         if self.current_line >= self.scope.end:
-            if hasattr(self.scope, '__end__'):
-                return self.scope.__end__(interpreter, self) or False
             return False
         
         
@@ -27,13 +25,14 @@ class View:
         if self.current_line == 0:
             if hasattr(self.scope, '__start__'):
                 self.current_line += 1
-                return self.scope.__start__(interpreter, self) or True
         self.current_line += 1
         return True
     def get_var(self, key):
-        return self.here.get_var(key)
+        if hasattr(self.here, "__scope__"):
+            return self.here[key]
     def set_var(self, key, value):
-        return self.here.set_var(key, value)
+        if hasattr(self.here, "__scope__"):
+            self.here[key] = value
 class InitView(View):
     def step(self, interpreter):
         if self.current_line >= self.scope.end:
@@ -51,15 +50,15 @@ class InitHereView(InitView):
         self._here = here
         
     def get_var(self, key):
-        return self.here.get_var(key)
+        return self.here[key]
     def set_var(self, key, value):
-        self.here.set_var(key, value)
+        self.here[key] = value
 class HereView(View):
     def __init__(self, here, scope):
         super().__init__(scope)
         self._here = here
     def get_var(self, key):
-        return self.here.get_var(key)
+        return self.here[key]
     def set_var(self, key, value):
-        self.here.set_var(key, value)
+        self.here[key] = value
 

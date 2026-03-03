@@ -164,7 +164,7 @@ class Block:
         
         self.precedence = precedence.copy()
         self.operators = operators.copy()
-        self.commands = commands
+        self.commands = commands.copy()
         
         self.return_stack = Stack()
         self.__scope__ = {}
@@ -173,7 +173,7 @@ class Block:
     def scope(self):
         return self
     
-    def set_var(self, keys, values):
+    def __setitem__(self, keys, values):
         if not isinstance(keys, tuple):
             keys = (keys,)
         if not isinstance(values, tuple):
@@ -185,46 +185,55 @@ class Block:
                 chain = token.chain
                 index = 0
                 while index < len(chain) - 1:
-                    segment = chain[index].literal
+                    segment = chain[index]
+                    if isinstance(segment, RawToken):
+                        segment = segment.literal
                     if segment in set_scope:
                         val = set_scope[segment]
-                        if isinstance(val, Block):
+                        if hasattr(val, "__scope__"):
                             set_scope = val.__scope__
                             index += 1
                             continue
                     raise StretchTerminate(f"Encountered a gap in {chain} at {segment}")
                 else:
                     token = chain[-1]
-            name = token.literal
-            set_scope[name] = values[key_index]
-    def get_var(self, token):        
+            if isinstance(token, RawToken):
+                token = token.literal
+            set_scope[token] = values[key_index]
+    def __getitem__(self, token):        
         get_scope = self.__scope__
+        if isinstance(token, RawToken):
+            token = token.literal
         if isinstance(token, Dotpath):
             chain = token.chain
             index = 0
             while index < len(chain) - 1:
-                segment = chain[index].literal
+                segment = chain[index]
+                if isinstance(segment, RawToken):
+                    segment = segment.literal
                 if segment in get_scope:
                     val = get_scope[segment]
-                    if isinstance(val, Promise):
+                    while isinstance(val, Promise):
                         val = val.load()
-                    if isinstance(val, Block):
+                    if hasattr(val, "__scope__"):
                         get_scope = val.__scope__
                         index += 1
                         continue
-                raise StretchTerminate(f"Encountered a break in {chain} at index {index}: {segment}")
+                raise StretchTerminate(f"Encountered a break in {chain} at index {index}: {segment} ---> {val}")
             else:
                 token = chain[-1]
-                if token.literal not in get_scope:
-                    raise StretchTerminate(f"Scope {chain[-2].literal} in chain {chain} does not contain {chain[-1].literal}")
-        if token.literal not in get_scope:
-            raise StretchTerminate(f"No '{token.literal}' in scope.")
+                if isinstance(token, RawToken):
+                    token = token.literal
+                
+                if token not in get_scope:
+                    raise StretchTerminate(f"Scope {chain[-2]} in chain {chain} does not contain {chain[-1]}")
+        if token not in get_scope:
+            raise StretchTerminate(f"No '{token}' in scope.")
         
-        name = token.literal
-        value = get_scope[name]
+        value = get_scope[token]
         if isinstance(value, Promise):
             value = value.load()
-            get_scope[name] = value
+            get_scope[token] = value
         return value       
     
     def process_section(self, interpreter, view, section):
