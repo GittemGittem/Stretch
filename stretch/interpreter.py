@@ -1,64 +1,42 @@
-from .scope_types import View, InitView
-from .core_types import Stack, Channel
 
+from .constructors import Stack
+from .parser import parse
 
 class Interpreter:
-    def __init__(self, parent=None):
-        self.parent = parent
-        self.__modules__ = {}
-        self.__extensions__ = {}
-        self.__builtin__ = {}
-    
+    def __init__(self):
         self.view_stack = Stack()
         self.try_stack = Stack()
-        self.exception_stack = Stack()
         self.running = False
-        
-        self.stack = Stack()
-        self.channels = Channel()
     
-    def init_scope(self, scope):
-        view = InitView(scope)
-        self.view_stack.insert(view)
+    @staticmethod
+    def parse(code):
+        return parse(code)
     
-    def process_scope(self, scope):
-        view = View(scope)
-        self.view_stack.insert(view)
+    def push(self, view):
+        self.view_stack.push(view)
+    def pull(self):
+        return self.view_stack.pull()
     
-    def run_scope(self, scope):
-        initview = InitView(scope)
-        view = View(scope)
-        self.view_stack.insert(view)
-        self.view_stack.insert(initview)
-    
-    def inline_scope(self, scope):
-        inline_interpreter = Interpreter(self)
-        inline_interpreter.run_scope(scope)
-        inline_interpreter.mainloop()
-    
-    
-    
-    def mainloop(self):
+    def mainloop(self, core):
         self.running = True
 
         while self.running:
-            if len(self.view_stack) > 2000:
-                raise RecursionError()
-            view = self.view_stack.peek()
-            if view is None:
+            if len(self.view_stack) <= 0:
                 self.running = False
-                return
-        
+                break
+            
+            view = self.view_stack[0]
+            
             try:
-                if not view.step(self):
-                    view = self.view_stack.pull()
+                if not view.step(core):
+                    self.pull()
             except Exception as e:
                 if len(self.try_stack) > 0:
+                    core.exception_stack.push(e)
                     try_view = self.try_stack.pull()
+                    view = self.pull()
                     while view is not try_view:
-                        view = self.view_stack.pull()
-                    self.exception_stack.push(e)
+                        view = self.pull()
                 else:
                     raise e
                 
-        
