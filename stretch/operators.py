@@ -5,22 +5,24 @@ precedence = PrecedenceGraph()
 operators = {}
 
 
-def add_group(group, low=None, high=None):
-    precedence.group(group, low, high)
+def add_group(group, low=None):
+    precedence.set_group(group, low)
     
 @garnish
 def add_operation(operate, group:str, symbol:str):
-    precedence.add_members(group, symbol)
+    precedence.add_member(group, symbol)
     operators[symbol] = operate
     return operate
 
 
 # OPERATORS
+add_group("equivalence")
+add_group("comparison", "equivalence")
 add_group("addition", "comparison")
 add_group("multiplication", "addition")
 add_group("exponentiation", "multiplication")
-add_group("comparison", "equivalence")
-add_group("equivalence")
+
+
 
 @add_operation.use("addition", "+")
 def __add__(l, r):

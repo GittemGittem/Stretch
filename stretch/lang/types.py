@@ -1,39 +1,77 @@
 
-from ..constructors import Group, Array, constructors
-
+from ..constructors import Group, constructors
+from copy import deepcopy
 
 
 class Var:
     __slots__ = ("var",)
     __names__ = {}
     def __new__(cls, name):
+        if isinstance(name, Var):
+            return name
         if name in cls.__names__:
             return cls.__names__[name]
         else:
             var = super().__new__(cls)
+            var.var = name
             cls.__names__[name] = var
             return var
+    def __deepcopy__(self, memo):
+        return self
     def __init_subclass__(cls):
         cls.__names__ = dict()
-    def __init__(self, name):
-        self.var = name  
-class Set(Var):
+class Set:
+    __slots__ = ("path")
+    def __init__(self, path):
+        self.path = tuple(path)
     def set(self, at, value):
-        at.__scope__[self.var] = value
+        final = self.path[-1]
+        path = self.path[:-1]
+        place = at
+        for dest in path:
+            if hasattr(place, "__scope__"):
+                where = place.__scope__
+            if dest in where:
+                place = where[dest]
+            else:
+                raise Exception()
+        
+        place.__scope__[final] = value
+
     def __repr__(self):
-        return f"{self.var}:"
-class Get(Var):
-    __slots__ = ("var")
+        return f"{'.'.join(name for name in self.path)}:"
+class Raw(Var):
+    def __repr__(self):
+        return f"{self.var}?"
+class Get:
+    __slots__ = ("path")
+    def __init__(self, path):
+        self.path = tuple(path)
     def get(self, at):
-        return at.__scope__[self.var]
+        final = self.path[-1]
+        path = self.path[:-1]
+        place = at
+        for dest in path:
+            if hasattr(place, "__scope__"):
+                where = place.__scope__
+            if dest in where:
+                place = where[dest]
+            else:
+                raise Exception()
+        
+        return place.__scope__[final]
+
     def __repr__(self):
-        return f"{self.var}"
-class Constuctor(Var):
+        return f"{'.'.join(name for name in self.path)}"
+class Constuctor:
+    def __init__(self, val):
+        self.template = val
     def __repr__(self):
-        return f"<- {self.var}"
+        return f"<- {self.template}"
     def load(self):
-        return constructors[self.var]()
+        return deepcopy(self.template)
 class Operator(Var):
+
     def __repr__(self):
         return self.var
 

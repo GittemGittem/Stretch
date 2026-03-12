@@ -21,6 +21,8 @@ class Interpreter:
         self.running = True
 
         while self.running:
+            if len(self.view_stack) > 2000:
+                raise RecursionError()
             if len(self.view_stack) <= 0:
                 self.running = False
                 break

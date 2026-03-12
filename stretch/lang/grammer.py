@@ -2,29 +2,32 @@ stretch_grammer = r"""
     start: statement*
     
     INIT: "$"
-    statement: [INIT] [set] (command | value)* ";"
+    statement: [INIT] (command | value)* ";"
     
-    set: NAME ":"
-    get: (NAME "?") | NAME
+    set: var ("." var)* ":"
+    get: var ("." var)*
+    raw: var ("." var)* "?"
     var: NAME
     
-    constructor: "<-" NAME
-    pair: atom ":" value
-    dict: ("{" pair ("," pair)* "}")
-    stack: ("{" value ("," value)* "}") # {0, 3, 6, 4}
-    block: ("{" statement+ "}") # {x: 0; @push @global \stack 7}
-    statement_array: "[" statement+ "]"
-    array: ("[" value ("," value)* "]")
-    group: ("(" value ("," value)* ")")
+    stat: "|" statement
+    block: ("{" statement* "}") # {x: 0; @push @global \stack 7}
+    stack: ("[" ( ((value) ("," (value) )*) | statement+)? "]")
+    group: ("(" (value ("," value)*)? ")")
     
-    cluster: ("<" get ("." get)* ">")
-    container: dict | stack | block | array | group | cluster | statement_array | constructor
+    container: stack | block | group
     
     # the building blocks for information
     atom: NUM
         | STR
+        | NONE
+        | bool
+        
+    NONE: "None"
+    TRUE: "True"
+    FALSE: "False"
+    bool: TRUE | FALSE
     
-    value: atom | get | container | expr | par_expr
+    value: atom | get | container | expr | par_expr | set | raw | stat
     
     OPERATOR: OP+ OP_CHAR* OP* | OP* OP_CHAR* OP+
     
@@ -37,6 +40,9 @@ stretch_grammer = r"""
     
     switches: ("@" NAME)*
     command: (NAME switches "->") | ("\\" NAME switches)
+    
+    COMMENT: /\#[^\n]*/
+    %ignore COMMENT
     
     %import common.CNAME -> NAME
     %import common.ESCAPED_STRING -> STR
