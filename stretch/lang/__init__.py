@@ -8,7 +8,7 @@ from ..constructors import Stack, Block, Statement, Group
 class StretchBuilder(Transformer):
     #start
     def start(self, block):
-        return Block(block)
+        return Block({"statements" : Stack(block)})
     #statement
     def statement(self, stat):
         init = stat[0] or False
@@ -22,7 +22,7 @@ class StretchBuilder(Transformer):
         
         return var[0]
     def raw(self, token):
-        return Raw(token[0])
+        return token[0]
     
     def set(self, set):
         
@@ -37,11 +37,19 @@ class StretchBuilder(Transformer):
         return value[0]
     def stat(self, stat):
         return stat[0]
+    def getitem(self, keys):
+        keys = keys[0]
+        if len(keys) > 1:
+            raise Exception()
+        key = keys[0]
+        return GetItem(key)
+    def call(self, args):
+        return Call(args[0])
     # container
     def container(self, container):
         return container[0]
     def block(self, block):
-        return Block(Stack(block))
+        return Block({"statements" : Stack(block)})
     def stack(self, stack):
         return Stack(stack)
     def group(self, group):

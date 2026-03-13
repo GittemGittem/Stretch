@@ -113,9 +113,9 @@ def take_stat(core, view, stack):
 def enter_block(core, view, stack):
     from .constructors import Block
     from .view import EnterView
-    scope = stack.pull_only(Block)
-    core.interpreter.push(EnterView(scope))
-    stack.push(scope.promise)
+    block = stack.pull_only(Block)
+    core.interpreter.push(EnterView(block))
+    stack.push(block.promise)
     
 @CommandGroup.use("while") # enter a block until a condition if False
 def while_block(core, view, stack):
@@ -129,13 +129,13 @@ def while_block(core, view, stack):
         core.interpreter.push(view)
         
 @CommandGroup.use("for") # enter a block for each element of a container
-def while_block(core, view, stack):
-    from .lang import Block, Stack, Group, Raw
+def for_block(core, view, stack):
+    from .lang import Block, Stack, Group
     from .view import ForView
-    token = stack.pull_only(Raw)
+    token = stack.pull_only(str)
     iterable = stack.pull_only((Stack, Group))
     block = stack.pull_only(Block)
-    core.interpreter.push(ForView(iterable, token.var, block, view.at))
+    core.interpreter.push(ForView(iterable, token, block, view.at))
     
     
 
@@ -172,31 +172,9 @@ def make_callable(core, view, stack):
     params = stack.pull_if(Group) or Group()
     callable_body = stack.pull_only(Block)
     func = Block()
-    func.vars["params"] = params
-    func.vars["__call__"] = callable_body
+    func["params"] = params
+    func["__call__"] = callable_body
     stack.push(func)
-    
-@CommandGroup.use("call")
-def call(core, view, stack):
-    from .constructors import Group, Block
-    from .view import EnterView
-    from .lang import Raw
-    body = stack.pull_only(Block)
-    args = stack.pull_if(Group) or Group()
-    body_vars = body.vars
-    params = body_vars.get("params", Group())
-    if "__call__" in body_vars:
-        __call__ = body_vars["__call__"]
-    else:
-        raise Exception(f"{body} does not contain a '__call__' method")
-    if len(args) != len(params):
-        raise Exception(f"{body} recieved {len(args)} args, expected {len(params)}")
-    func_vars = __call__.vars
-    func_vars["body"] = body
-    for index, name in enumerate(params):
-        func_vars[name.var if isinstance(name, Raw) else name] = args[index]
-    core.interpreter.push(EnterView(__call__))
-    stack.push(__call__.promise)
 
 @CommandGroup.use("inherit")
 def inherit_class(core, view, stack):
@@ -240,7 +218,7 @@ def finish_scope(core, view, stack):
 def return_val(core, view, stack):
     val = stack.peek()
     if val is not None:
-        view.at.promise.return_stack.push(val)
+        view.at.promise.push(val)
     core.interpreter.pull()
 
 # CONTROL FLOW
@@ -285,21 +263,6 @@ def catch(core, view, stack):
         view = EnterView(block, view.at)
         core.interpreter.push(view)
 
-@CommandGroup.use("extend")
-def import_extension(core, view, stack):
-    from .constructors import Stack
-    from . import extensions
-    import importlib
-    path = stack.pull_only(Stack)
-    if path[0] == ".":
-        module = getattr(extensions, Stack(path[1:]).dot())
-    else:
-        module = importlib.import_module(path.dot())
-    if hasattr(module, "__extension__"):
-        extender = module.__extension__
-        extender.extend(view.block)
-    else:
-        raise Exception()
 
 @CommandGroup.use("process")
 def parse_to_stretch(core, view, stack):

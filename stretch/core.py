@@ -1,4 +1,4 @@
-from .lang.types import Set, Get, Command, Constuctor, Expression, Operator
+from .lang.types import Set, Get, Command, Expression, Operator, GetItem, Call
 from .constructors import Stack, Group, Block, Promise
 from .view import InitView
 from copy import deepcopy
@@ -46,8 +46,8 @@ class Core:
         if len(stack) > 0:
             previous = stack[0]
             if isinstance(previous, Promise):
-                val = previous.load()
-                stack.pull()
+                promise = stack.pull()
+                val = promise.peek() or promise.owner
                 stack.insert(val, 0)
         match part:
             case string if isinstance(string, str):
@@ -61,7 +61,7 @@ class Core:
             case block if isinstance(block, Block):
                 block = deepcopy(block)
                 self.interpreter.push(InitView(block))
-                stack.push(block.promise)
+                stack.push(block)
             case expr if isinstance(expr, Expression):
                 expr = self.solve(expr, view.at)
                 stack.push(expr)
@@ -73,7 +73,6 @@ class Core:
                         result.append(part.get(view.at))
                     else:
                         result.append(part)
-                
                 stack.push(result)
             case group_part if isinstance(group_part, Group):
                 group_part = deepcopy(group_part)
@@ -87,5 +86,13 @@ class Core:
                 stack.push(Group(result))
             case part:
                 stack.insert(part)
-                
+        if len(stack) > 1:
+            if isinstance(stack.peek(1), Call):
+                obj = stack.pull()
+                call = stack.pull()
+                call(self, stack, obj)
+            elif isinstance(stack.peek(1), GetItem):
+                obj = stack.pull()
+                getitem = stack.pull()
+                getitem(self, stack, obj)
                 

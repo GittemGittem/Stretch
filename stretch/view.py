@@ -65,39 +65,15 @@ class ForView(EnterView):
         super().__init__(block, at)
         self.iter = Stack(iterable)
         self.var = var
-        self.at.vars[self.var] = self.iter.pull()
+        self.at[self.var] = self.iter.pull()
     def __end__(self):
         if len(self.iter) > 0:
             self.current_line = 0
-            self.at.vars[self.var] = self.iter.pull()
+            self.at[self.var] = self.iter.pull()
             return True
         else:
             return False
         
-        
-
-
-class MultiView:
-    def __init__(self, views):
-        self.views = views
-        self.current = 0
-    
-    def step(self, core):
-        
-        if len(self.views) <= 0:
-            return False
-        
-        view_index = self.current % len(self.views)
-        view = self.views[view_index]
-        if not view.step(core):
-            del self.views[view_index]
-        
-        self.current += 1
-        return True
-        
-        
-        
-
 class LineView:
     __slots__ = ("stack", "parts", "promise")
     class Promise(Promise):

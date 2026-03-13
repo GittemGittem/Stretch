@@ -1,5 +1,5 @@
 
-from ..constructors import Group, constructors
+from ..constructors import Group
 from copy import deepcopy
 
 
@@ -36,13 +36,10 @@ class Set:
             else:
                 raise Exception()
         
-        place.__scope__[final] = value
+        place[final] = value
 
     def __repr__(self):
         return f"{'.'.join(name for name in self.path)}:"
-class Raw(Var):
-    def __repr__(self):
-        return f"{self.var}?"
 class Get:
     __slots__ = ("path")
     def __init__(self, path):
@@ -52,24 +49,39 @@ class Get:
         path = self.path[:-1]
         place = at
         for dest in path:
-            if hasattr(place, "__scope__"):
-                where = place.__scope__
-            if dest in where:
-                place = where[dest]
+            if dest in place:
+                place = place[dest]
             else:
                 raise Exception()
         
-        return place.__scope__[final]
+        return place[final]
 
     def __repr__(self):
         return f"{'.'.join(name for name in self.path)}"
-class Constuctor:
-    def __init__(self, val):
-        self.template = val
-    def __repr__(self):
-        return f"<- {self.template}"
-    def load(self):
-        return deepcopy(self.template)
+class Call:
+    def __init__(self, args):
+        self.args = args
+    def __call__(self, core, stack, obj):
+        from ..view import EnterView
+        bl = obj.get("__call__", None)
+        params = obj.get("params", Group())
+        print(self.args)
+        if len(params) != len(self.args):
+            raise Exception()
+        if bl is None:
+            raise Exception()
+        for index, param in enumerate(params):
+            bl[param] = self.args[index]
+        
+        core.interpreter.push(EnterView(bl))
+        stack.push(bl["promise"])
+
+class GetItem:
+    def __init__(self, key):
+        self.key = key
+        
+    def __call__(self, core, stack, obj):
+        stack.push(obj[self.key])
 class Operator(Var):
 
     def __repr__(self):

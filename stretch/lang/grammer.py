@@ -6,13 +6,16 @@ stretch_grammer = r"""
     
     set: var ("." var)* ":"
     get: var ("." var)*
-    raw: var ("." var)* "?"
+    raw: var "?"
     var: NAME
     
     stat: "|" statement
     block: ("{" statement* "}") # {x: 0; @push @global \stack 7}
     stack: ("[" ( ((value) ("," (value) )*) | statement+)? "]")
     group: ("(" (value ("," value)*)? ")")
+    
+    call: "<-" group
+    getitem: "<-" stack
     
     container: stack | block | group
     
@@ -27,7 +30,7 @@ stretch_grammer = r"""
     FALSE: "False"
     bool: TRUE | FALSE
     
-    value: atom | get | container | expr | par_expr | set | raw | stat
+    value: atom | get | container | expr | par_expr | set | raw | stat | call | getitem
     
     OPERATOR: OP+ OP_CHAR* OP* | OP* OP_CHAR* OP+
     
