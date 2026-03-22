@@ -1,14 +1,10 @@
-from ..extension import Extender
-import codecs
+from . import Extender
+
 
 
 __extension__ = Extender()
-@__extension__.CommandGroup.use("in")
-def get_input(core, view, stack):
-    message = stack.pull_if(str) or ""
-    stack.push(codecs.decode(input(message), "unicode_escape"))
-_print = __extension__.CommandGroup.use("print")(None)
 
-@_print.switch.use("e")
-def print_e(core, view, stack):
-    print("e")
+@__extension__.add_command.use("in")
+def get_input(core, view, stack):
+    prompt = stack.pull_if(str)
+    stack.push(core.interface.get_input(prompt))

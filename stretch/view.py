@@ -1,101 +1,98 @@
-from .constructors import Stack, Promise, Block
+from .structures import Stack
 
-class View: pass
-
-class BlockView(View):
-    __slots__ = ("current_line", "lines", "_at", "_block", "line_stack", "init")
-    def __init__(self, block:Block, at=None, init=True):
-        self._at = at or block
-        self._block = block
+class View:
+    
+    
+    def __init__(self, block):
+        self.block = block
+        
         self.current_line = 0
-        self.lines = Stack([statement for statement in block.stats])
-        self.line_stack = Stack()
-        self.init = init
-
-    def push(self, line_view):
-        self.line_stack.push(line_view)
-    def pull(self):
-        self.line_stack.pull()
-    @property
-    def vars(self):
-        return self.at.vars
-    @property
-    def current(self):
-        return self.line_stack[0]
+        self.parts = Stack()
+        self.stack = Stack()
+        self.init = False
     
     def __end__(self):
+        self.block.get("__scopes__", Stack()).pull_if()
         return False
     
-    def step(self, core):
-        if len(self.line_stack) <= 0:
-            if self.current_line > len(self.lines) - 1:
+    def next(self, core):
+        if len(self.parts) == 0:
+            self.stack.clear()
+            statements = self.block.get("statements", Stack())
+            if self.current_line >= len(statements):
                 return self.__end__()
             else:
-                line = self.lines[self.current_line]
-                if line.init == self.init:
-                    self.push(LineView(line))
-                else:
-                    self.current_line += 1
+                statement = statements[self.current_line]
+                
+                self.current_line += 1
+                
+                
+                if statement.init != self.init:
                     return True
+                
+                self.parts.extend(statement)
+                
+        return self.parts.pull(), self.stack
+        
+    def set(self, path, value):
+        final = path[-1]
+        path = path[:-1]
+        
+        __local__ = self.at.get("__local__", self.at)
+        
+        if len(path) > 0:
+            __nonlocal__ = __local__.get("__nonlocal__", __local__)
+            start = path[0]
+            if start in __local__:
+                __scope__ = __local__
+            elif start in __nonlocal__:
+                __scope__ = __nonlocal__
             
-        line_view = self.line_stack[0]
+            for dest in path:
+                if dest in __scope__:
+                    __scope__ = __scope__[dest]
             
-        if not line_view.step(core, self):
-            self.pull()
-            self.current_line += 1
-        return True
+            __scope__[final] = value
+               
+        else:
+            __local__[final] = value
+        
+        
+    
+    def get(self, path):
+        final = path[-1]
+        path = path[:-1]
+        
+        __local__ = self.at.get("__local__", self.at)
+        
+        __nonlocal__ = __local__.get("__nonlocal__", __local__)
+        if len(path) > 0:
+            start = path[0]
+            if start in __local__:
+                __scope__ = __local__
+            elif start in __nonlocal__:
+                __scope__ = __nonlocal__
+            
+            for dest in path:
+                if dest in __scope__:
+                    __scope__ = __scope__[dest]
+            
+            return __scope__[final]
+               
+        else:
+            if final in __local__:
+                return __local__[final]
+            else:
+                return __nonlocal__[final]
     
     @property
     def at(self):
-        return self._at
-    @property
-    def block(self):
-        return self._block
-
-class InitView(BlockView):
-    def __init__(self, block, at=None):
-        super().__init__(block, at, True)
-class EnterView(BlockView):
-    def __init__(self, block, at=None):
-        super().__init__(block, at, False) 
-
-class ForView(EnterView):
-    __slots__ = ("current_line", "lines", "_at", "_block", "line_stack", "init", "iter", "var")
-    def __init__(self, iterable, var, block, at=None):
-        super().__init__(block, at)
-        self.iter = Stack(iterable)
-        self.var = var
-        self.at[self.var] = self.iter.pull()
-    def __end__(self):
-        if len(self.iter) > 0:
-            self.current_line = 0
-            self.at[self.var] = self.iter.pull()
-            return True
-        else:
-            return False
-        
-class LineView:
-    __slots__ = ("stack", "parts", "promise")
-    class Promise(Promise):
-        def __init__(self, line_view):
-            self.view = line_view
-        def load(self):
-            return self.view.stack
-    def __init__(self, statement=None):
-        if statement is None:
-            self.parts = Stack()
-        else:
-            self.parts = Stack(statement.parts)
-        self.stack = Stack()
-        self.promise = self.Promise(self)
+        return self.block.get("__scopes__", Stack()).peek() or self.block
     
-    def step(self, core, view):
-        if len(self.parts) <= 0:
-            return False
-        
-        core.process(view, self.parts.pop(), self.stack)
-        return True
-        
-        
-        
-        
+    @property
+    def commands(self):
+        if "__commands__" in self.block:
+            return self.block["__commands__"]
+        else:
+            from .commands import commands
+            return commands

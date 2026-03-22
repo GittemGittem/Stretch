@@ -1,98 +1,43 @@
-from .lang.types import Set, Get, Command, Expression, Operator, GetItem, Call
-from .constructors import Stack, Group, Block, Promise
-from .view import InitView
-from copy import deepcopy
+from .structures import Stack
+
 
 class Core:
-    def push(self, val):
-        self.stack.push(val)
-    def pull(self):
-        return self.stack.pull()
-    
-    
-    def __init__(self, interpreter):
-        self.interpreter = interpreter
+    __slots__ = ("stack", "view_stack", "recursion_limit", "exception_stack", "try_stack", "interface")
+    def __init__(self, interface=None):
         self.stack = Stack()
+        self.view_stack = Stack()
+        self.interface = interface
+        self.recursion_limit = 2000
         self.exception_stack = Stack()
-        self.channels = None
+        self.try_stack = Stack()
     
-    def solve(self, expr, scope):
-        expr = expr[:]
-        operators = scope.operators
-        precedence = scope.precedence
-        for group in precedence:
-            index = 0
-            while index < len(expr):
-                term = expr[index]
-                if isinstance(term, Operator):
-                    if term.var in group:
-                        index -= 1
-                        l = expr.pop(index)
-                        op = expr.pop(index).var
-                        r = expr.pop(index)
-                        if isinstance(l, Get):
-                            l = l.get(scope)
-                        if isinstance(r, Get):
-                            r = r.get(scope)
-                        if isinstance(l, Expression):
-                            l = self.solve(l, scope)
-                        if isinstance(r, Expression):
-                            r = self.solve(r, scope)
-                        expr.insert(index, operators[op](l, r))
-                index += 1
-        return expr[0]
+    def step(self, driver):
+        view = self.view
+        
+        if view:
+            
+            next = view.next(self)
+            if next:
+                if next is True:
+                    return next
+                part, stack = next
+                
+                driver.process(self, view, part, stack)
+
+                return True
+            self.pull()
+            return True
+        return False
+        
     
-    def process(self, view, part, stack):
-        if len(stack) > 0:
-            previous = stack[0]
-            if isinstance(previous, Promise):
-                promise = stack.pull()
-                val = promise.peek() or promise.owner
-                stack.insert(val, 0)
-        match part:
-            case string if isinstance(string, str):
-                stack.push(string.encode().decode())
-            case set if isinstance(set, Set):
-                set.set(view.at, stack.pull())
-            case get if isinstance(get, Get):
-                stack.push(get.get(view.at))
-            case command if isinstance(command, Command):
-                result = view.at.commands(command, self, view, stack)
-            case block if isinstance(block, Block):
-                block = deepcopy(block)
-                self.interpreter.push(InitView(block))
-                stack.push(block)
-            case expr if isinstance(expr, Expression):
-                expr = self.solve(expr, view.at)
-                stack.push(expr)
-            case stack_part if isinstance(stack_part, Stack):
-                stack_part = deepcopy(stack_part)
-                result = Stack()
-                for part in stack_part:
-                    if isinstance(part, Get):
-                        result.append(part.get(view.at))
-                    else:
-                        result.append(part)
-                stack.push(result)
-            case group_part if isinstance(group_part, Group):
-                group_part = deepcopy(group_part)
-                result = []
-                for part in group_part:
-                    if isinstance(part, Get):
-                        result.append(part.get(view.at))
-                    else:
-                        result.append(part)
-                
-                stack.push(Group(result))
-            case part:
-                stack.insert(part)
-        if len(stack) > 1:
-            if isinstance(stack.peek(1), Call):
-                obj = stack.pull()
-                call = stack.pull()
-                call(self, stack, obj)
-            elif isinstance(stack.peek(1), GetItem):
-                obj = stack.pull()
-                getitem = stack.pull()
-                getitem(self, stack, obj)
-                
+    def pull(self):
+        return self.view_stack.pull()
+    def push(self, view):
+        self.view_stack.push(view)
+
+    
+    @property
+    def view(self):
+        if len(self.view_stack) > self.recursion_limit:
+            raise RecursionError("2000 views were pushed to the view stack")
+        return self.view_stack.peek()

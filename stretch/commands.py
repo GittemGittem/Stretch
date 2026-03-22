@@ -1,78 +1,39 @@
 from garnish import garnish
-from copy import deepcopy
+from .structures import Stack, Group
+from .view import View
 
 
-class CommandInterface:
-    __slots__ = ("commands",)
-    def __init__(self):
-        self.commands = {}
-    
-    
-    def update(self, other):
-        for command_name in other.commands:
-            if command_name in self.commands:
-                command_group = other.commands[command_name]
-                self.commands[command_name].update(command_group)
-            else:
-                self.commands[command_name] = other.commands[command_name]
+commands = {}
 
-    
-    def __setitem__(self, name, command):
-        self.commands[name] = command
-    def __getitem__(self, name):
-        return self.commands[name]
-    
-    def __call__(self, command, *arguments):
-        return self.commands[command.command](command.switches, *arguments)
 
-commands = CommandInterface()
+def make_group(group_name, command_dict=commands):
+    if group_name not in command_dict:
+        command_dict[group_name] = {}
 
-class __cmd_group_meta(type):
-    def __call__(cls, func, name, *args):
-        instance = super().__call__(func, name, *args)
-        if func is None:
-            return instance
-        func.switch = instance.switch
-        return func
 @garnish
-class CommandGroup(metaclass = __cmd_group_meta):
-    __slots__ = ("commands",)
-    def __init__(self, base_command, name, interface=commands):
-        interface[name] = self
-        self.commands = {frozenset(): base_command}
-    
-    
-    def update(self, other):
-        for switches in other.commands:
-            if other.commands[switches] is not None:
-                self.commands[switches] = other.commands[switches]
-    
-    @garnish
-    def switch(self, command, *switches):
-        self.commands[frozenset(switches)] = command
-        return self
-    def __call__(self, switches, *arguments):
-        return self.commands[frozenset(switches)](*arguments)
+def add_command(func, group, *switches, command_dict=commands):
+    if group not in command_dict:
+        make_group(group, command_dict=command_dict)
+    command_dict[group][frozenset(switches)] = func
+    return func
 
 
-
-
-
-# PRINT
-@CommandGroup.use("print")
+@add_command.use("print")
 def _print(core, view, stack):
-    if stack.peek() is not None:
-       print(stack.peek())
+    val = stack.peek()
+    if val is not None:
+        print(stack.pull())
     else:
         print()
+        
 
-@_print.switch.use("all")
+@add_command.use("print", "all")
 def print_all(core, view, stack):
     print(*stack)
     stack.clear()
     
-@CommandGroup.use("goto")
-def goto(interpreter, view, stack):
+@add_command.use("goto")
+def goto(core, view, stack):
     new_line = stack.pull_if(int)
     if new_line is not None:
         new_line = new_line - 1
@@ -82,42 +43,28 @@ def goto(interpreter, view, stack):
     stack.push(prev_line)
     view.current_line = new_line
 
-@CommandGroup.use("info")
+@add_command.use("info")
 def info(core, view, stack):
     obj = stack.pull()
     stack.push(f"<stretch {type(obj).__name__} obj at '{hex(id(obj))}'>")
     
-@info.switch.use("line")
+@add_command.use("info", "line")
 def get_line(core, view, stack):
     stack.insert(view.current_line)
-@info.switch.use("block")
+    
+@add_command.use("info", "block")
 def get_scope(core, view, stack):
     stack.insert(view.at)
     
-@CommandGroup.use("open") # run a statement
-def run_stat(core, view, stack):
-    from .constructors import Statement, Stack
-    from .view import LineView
-    stat = stack.pull_only(Statement)
-    line = view.current
-    stat = deepcopy(stat)
-    for part in stat.parts:
-        line.parts.append(part)
-@run_stat.switch.use("take") # take a statement from an array
-def take_stat(core, view, stack):
-    stats = stack.peek()
-    run_stat(core, view, stack)
-    stats.pop(0)
 
-@CommandGroup.use("enter") # enter a block
+
+@add_command.use("enter") # enter a block
 def enter_block(core, view, stack):
-    from .constructors import Block
-    from .view import EnterView
-    block = stack.pull_only(Block)
-    core.interpreter.push(EnterView(block))
-    stack.push(block.promise)
+    block = stack.pull_only(dict)
+    core.push(View(block))
+    stack.push(block)
     
-@CommandGroup.use("while") # enter a block until a condition if False
+@add_command.use("while") # enter a block until a condition if False
 def while_block(core, view, stack):
     from .lang import Block
     from .view import EnterView
@@ -128,7 +75,7 @@ def while_block(core, view, stack):
         view = EnterView(block, view.at)
         core.interpreter.push(view)
         
-@CommandGroup.use("for") # enter a block for each element of a container
+@add_command.use("for") # enter a block for each element of a container
 def for_block(core, view, stack):
     from .lang import Block, Stack, Group
     from .view import ForView
@@ -139,99 +86,84 @@ def for_block(core, view, stack):
     
     
 
-@enter_block.switch.use("here") # enter a block as if it were in the current scope
+@add_command.use("enter", "here") # enter a block as if it were in the current scope
 def enter_inline(core, view, stack):
-    from .lang import Block
-    from .view import EnterView
-    scope = stack.pull_only(Block)
-    core.interpreter.push(EnterView(scope, view.at))
-    stack.push(scope.promise)
-    
-@enter_block.switch.use("multi") # enter multiple blocks
-def run_multi(core, view, stack):
-    from .constructors import Block
-    from .view import EnterView, MultiView
-    scopes = stack.pull_only(tuple)
-    enter = MultiView([EnterView(scope) for scope in scopes])
-    core.interpreter.push(enter)
+    from .view import View
+    block = stack.pull_only(dict)
+    block["__scopes__"].push(view.at)
+    core.push(View(block))
+    stack.push(block)
 
-@CommandGroup.use("reinit") # reinit a block
+@add_command.use("reinit") # reinit a block
 def reinit_block(core, view, stack):
-    from .lang import Block
-    from .view import InitView
-    scope = stack.pull_only(Block)
-    core.interpreter.push(InitView(scope))
+    from .view import View
+    scope = stack.pull_only(dict)
+    core.interpreter.push(View(scope))
     stack.push(scope.promise)
 
 # FUNCTIONS
 
-@CommandGroup.use("def")
+@add_command.use("def")
 def make_callable(core, view, stack):
-    from .constructors import Group, Block
-    from .view import EnterView
-    params = stack.pull_if(Group) or Group()
-    callable_body = stack.pull_only(Block)
-    func = Block()
-    func["params"] = params
-    func["__call__"] = callable_body
+    from .structures import Group
+    params = stack.pull_if(Group)
+    __call__ = stack.pull_only(dict)
+    func = {}
+    func["__params__"] = params
+    func["__call__"] = __call__
     stack.push(func)
 
-@CommandGroup.use("inherit")
+@add_command.use("inherit")
 def inherit_class(core, view, stack):
-    from .constructors import Block
     from .view import EnterView
-    inherit = stack.pull_only(Block)
-    new = stack.pull_only(Block)
+    inherit = stack.pull_only(dict)
+    new = stack.pull_only(dict)
     new.vars["super"] = inherit
     core.interpreter.push(EnterView(new))
     stack.push(new)
         
         
-@CommandGroup.use("pass")
+@add_command.use("pass")
 def do_nothing(core, view, stack):
     pass
 
 
 
 # TERMINATING BLOCKS
-@CommandGroup.use("break")
+@add_command.use("break")
 def break_view(core, view, stack):
     core.interpreter.pull()
-@break_view.switch.use("break", "count")
+@add_command.use("break", "count")
 def break_count(core, view, stack):
     count = stack.pull_if(int) or 1
     while count > 0:
         core.interpreter.pull()
         count -= 1
-@break_view.switch.use("break", "all")
+@add_command.use("break", "all")
 def break_all(core, view, stack):
-    from .constructors import Stack
+    from .structures import Stack
     core.interpreter.view_stack = Stack()
     
-@CommandGroup.use("end")
+@add_command.use("end")
 def terminate_program(core, view, stack):
     core.running = False  
-@CommandGroup.use("continue")
+@add_command.use("continue")
 def finish_scope(core, view, stack):
     view.current_line = len(view.lines)  
-@CommandGroup.use("return")
+@add_command.use("return")
 def return_val(core, view, stack):
-    val = stack.peek()
-    if val is not None:
-        view.at.promise.push(val)
-    core.interpreter.pull()
+    view.block["__promise__"] = stack.pull()
 
 # CONTROL FLOW
-@CommandGroup.use("if")
+@add_command.use("if")
 def if_stat(core, view, stack):
-    from .lang import Block
-    from .view import EnterView
     condition = stack.pull_only(bool)
-    block = stack.pull_only(Block)
+    block = stack.pull_only(dict)
+    block["__scopes__"].push(view.at)
     if condition:
-        view = EnterView(block, view.at)
-        core.interpreter.push(view)
-@CommandGroup.use("unless")
+        view = View(block)
+        core.push(view)
+@add_command.use("unless")
 def unless_stat(core, view, stack):
     from .lang import Block
     from .view import EnterView
@@ -242,134 +174,43 @@ def unless_stat(core, view, stack):
         core.interpreter.push(view)
 
 # EXCEPTION HANDLING
-@CommandGroup.use("try")
+@add_command.use("try")
 def _try(core, view, stack):
-    from .constructors import Block
-    from .view import EnterView
-    block = stack.pull_only(Block)
-    view = EnterView(block, view.at)
+    block = stack.pull_only(dict)
+    block["__scopes__"].push(view.at)
+    view = View(block)
     core.exception_stack.clear()
-    core.interpreter.push(view)
-    core.interpreter.try_stack.push(view)
+    core.push(view)
+    core.try_stack.push(view)
 
-@CommandGroup.use("catch")
+@add_command.use("catch")
 def catch(core, view, stack):
-    from .lang import Block
-    from .view import EnterView
-    exc = core.exception_stack.pull_if(Exception)
-    block = stack.pull_if(Block)
-    view.at.__scope__["EXCEPTION"] = exc
+    exc = core.exception_stack.pull_if()
+    block = stack.pull_if(dict)
+    
     if exc is not None:
-        view = EnterView(block, view.at)
+        view.set[["EXCEPTION"]] = exc
+        view = View(block, view.at)
         core.interpreter.push(view)
 
 
-@CommandGroup.use("process")
+@add_command.use("process")
 def parse_to_stretch(core, view, stack):
-    from.parser import parse
+    from .lang import parse
     code_string = stack.pull_only(str)
     stack.push(parse(code_string))
 
 
-stack = CommandGroup.use("stack")(None)
-@stack.switch.use("pull")
+@add_command.use("stack", "pull")
 def pull_stack(core, view, stack):
     stack.push(core.pull())
-@stack.switch.use("push")
+@add_command.use("stack", "push")
 def pull_stack(core, view, stack):
     core.push(stack.pull())
 
-
-"""
-
-
-@add_command.use("import")
-def import_module(interpreter, view, tokens:Stack):
-    pointer = tokens.pull_only(list)
-    dotpath = pointer[0]
-    dot = dotpath.dot()
-    if dot in interpreter.__modules__:
-        scope = interpreter.__modules__[dot]
-    else:
-        filepath = dotpath.file("str")
-        if os.path.exists(filepath):
-            from .parser import parser
-            with open(filepath, 'r') as module_file:
-                scope = parser.parse(module_file.read())
-            interpreter.__modules__[dot] = scope
-        else:
-            raise StretchTerminate(f"There is no module {filepath}")
-    tokens.insert(scope)
-
-
-# COMMUNICATION
-# global stack
-@add_command.use("stack", "push")
-def push_stack(interpreter, view, tokens:Stack):
-    interpreter.stack.push(tokens.pull())
-@add_command.use("stack", "pull")
-def pull_stack(interpreter, view, tokens:Stack):
-    val = interpreter.stack.pull()
-    if isinstance(val, Promise):
-        val = val.load()
-    tokens.push(val)
-@add_command.use("stack", "look")
-def pull_stack(interpreter, view, tokens:Stack):
-    val = interpreter.stack.peek()
-    if isinstance(val, Promise):
-        val = val.load()
-    tokens.push(val)
-# global channels
-@add_command.use("channel", "emit")
-def emit_channel(interpreter, view, tokens:Stack):
-    ids = tokens.pull_only(list)
-    vals = tokens.pull()
-    if not isinstance(vals, tuple):
-        vals = tuple([vals for _ in range(len(ids))])
-    for index in range(len(ids)):
-        interpreter.channels.emit(ids[index], vals[index])
-                
-    
-@add_command.use("channel", "look")
-def recieve_channel(interpreter, view, tokens:Stack):
-    ids = tokens.pull_only(list)
-    for id in ids:
-        tokens.push(interpreter.channels.look(id))
-
-@add_command.use("channel", "take")
-def take_channel(interpreter, view, tokens:Stack):
-    ids = tokens.pull_only(list)
-
-    if any([id is None for id in ids]):
-        return
-    result = []
-    for id in ids:
-        result.append(interpreter.channels.take(ids))
-    tokens.push(tuple(result))
-    
-
-@add_command.use("channel", "on")
-def on_channel(interpreter, view, tokens:Stack):
-    from .lang import RawToken, Block
-    ids = tokens.pull_only(list)
-    block = tokens.pull_only(Block)
-    for id in ids:
-        if interpreter.channels.look(id) is None:
-            return
-    from .scope_types import HereView, InitHereView
-    enter_view = HereView(view.scope, block)
-    interpreter.view_stack.insert(enter_view)
-    init_view = InitHereView(view.scope, block)
-    interpreter.view_stack.insert(init_view)
-    tokens.push(block)
-
-@add_command.use("channel", "clear")
-def clear_channels(interpreter, view, tokens:Stack):
-    interpreter.channels.clear()
-@add_command.use("channel", "erase")
-def erase_channels(interpreter, view, tokens:Stack):
-    ids = tokens.pull_only(list)
-    for id in ids:
-        interpreter.channels.erase(id)
-
-"""
+@add_command.use("extend", "builtin")
+def extension(core, view, stack):
+    from . import extensions
+    path = stack.pull_only(str)
+    extension = getattr(extensions, path)
+    extension.extend(view.block)

@@ -1,56 +1,69 @@
-stretch_grammer = r"""
-    start: statement*
-    
-    INIT: "$"
-    statement: [INIT] (command | value)* ";"
-    
-    set: var ("." var)* ":"
-    get: var ("." var)*
-    raw: var "?"
-    var: NAME
-    
-    stat: "|" statement
-    block: ("{" statement* "}") # {x: 0; @push @global \stack 7}
-    stack: ("[" ( ((value) ("," (value) )*) | statement+)? "]")
-    group: ("(" (value ("," value)*)? ")")
-    
-    call: "<-" group
-    getitem: "<-" stack
-    
-    container: stack | block | group
-    
-    # the building blocks for information
-    atom: NUM
-        | STR
-        | NONE
-        | bool
-        
-    NONE: "None"
-    TRUE: "True"
-    FALSE: "False"
-    bool: TRUE | FALSE
-    
-    value: atom | get | container | expr | par_expr | set | raw | stat | call | getitem
-    
-    OPERATOR: OP+ OP_CHAR* OP* | OP* OP_CHAR* OP+
-    
-    OP: /[+\-*\/=<>!&%^~]/
-    OP_CHAR: /[A-Za-z0-9_]/
-    
-    par_expr: "(" value (OPERATOR value)+ ")"
-    expr: value (OPERATOR value)+
 
+from lark import Lark
+
+stretch_grammer = r"""
+start: code
+
+code: (statement | init_statement | WS)*
+
+container: block | stack | group
+block: "{" code "}"
+stack: "[" WS? (value WS? ("," WS? value WS?)*)? "]"
+group: "(" WS? (value WS? ("," WS? value WS?)*)? ")"
+
+call: value group
+getitem: value stack
+
+init_statement: "$" WS? statement
+statement: value (WS value)* WS? ";"
+
+var: (NAME | ("\\" NUM)) (("." NAME | ("\\" NUM)))*
+set: var WS? ":"
+get: var WS?
+
+value: atom
+    | container
+    | set
+    | get
+    | call
+    | getitem
+    | command
+    | expression
     
-    switches: ("@" NAME)*
-    command: (NAME switches "->") | ("\\" NAME switches)
+command: (NAME (WS switches)? WS? "->") | ("<" NAME WS? switches? WS? ">")
+switches: "@" NAME ("\\" NAME)*
+
+OPERATOR: OP+ OP_CHAR* OP* | OP* OP_CHAR* OP+
     
-    COMMENT: /\#[^\n]*/
-    %ignore COMMENT
+OP: /(?!->)[+\-*\/=<>!&%^~]/
+
+OP_CHAR: /[A-Za-z0-9_]/
+
+expression: par_expr | expr
+par_expr: "(" value WS? (OPERATOR WS? value)+ ")"
+expr: value WS? (OPERATOR WS? value)+
+
+
+
+TRUE.0: "True"
+FALSE.0: "False"
+
+atom: NUM
+    | str
+    | TRUE
+    | FALSE
     
-    %import common.CNAME -> NAME
-    %import common.ESCAPED_STRING -> STR
-    %import common.SIGNED_NUMBER -> NUM
+str: STR
+    | var "?"
     
-    %import common.WS
-    %ignore WS
+COMMENT: /\#[^\n]*/
+%ignore COMMENT
+
+%import common.SIGNED_NUMBER -> NUM
+%import common.ESCAPED_STRING -> STR
+%import common.CNAME -> NAME
+
+
+%import common.WS
 """
+make_tree = Lark(stretch_grammer, parser="earley").parse
