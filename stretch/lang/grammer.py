@@ -1,69 +1,66 @@
-
 from lark import Lark
 
+
+
+
+
+
+
 stretch_grammer = r"""
-start: code
 
-code: (statement | init_statement | WS)*
+start: (code | WS)?
 
-container: block | stack | group
-block: "{" code "}"
-stack: "[" WS? (value WS? ("," WS? value WS?)*)? "]"
-group: "(" WS? (value WS? ("," WS? value WS?)*)? ")"
+code: (WS? (statement | init_statement) WS? ";" WS?)*
 
-call: value group
-getitem: value stack
+block: "{" (code | WS)? "}"
 
-init_statement: "$" WS? statement
-statement: value (WS value)* WS? ";"
+group: "(" (WS? value (WS value)* WS?)? ")"
+stack: "[" WS? value (WS value)* WS? "]"
 
-var: (NAME | ("\\" NUM)) (("." NAME | ("\\" NUM)))*
-set: var WS? ":"
-get: var WS?
+instructions: value (WS value)*
+statement: instructions
+init_statement: "$" instructions
 
-value: atom
-    | container
-    | set
-    | get
-    | call
-    | getitem
-    | command
-    | expression
-    
-command: (NAME (WS switches)? WS? "->") | ("<" NAME WS? switches? WS? ">")
-switches: "@" NAME ("\\" NAME)*
+access: ("." NAME) | ("\\" RAWNUM)
+access_path: access+
 
-OPERATOR: OP+ OP_CHAR* OP* | OP* OP_CHAR* OP+
-    
-OP: /(?!->)[+\-*\/=<>!&%^~]/
-
-OP_CHAR: /[A-Za-z0-9_]/
-
-expression: par_expr | expr
-par_expr: "(" value WS? (OPERATOR WS? value)+ ")"
-expr: value WS? (OPERATOR WS? value)+
+set_path: access+ ":"
 
 
+command: NAME stack # act on the elements in a provided stack
+stack_command: NAME WS? "->" # act on the stack
 
-TRUE.0: "True"
-FALSE.0: "False"
+call: access_path (group | stack) # call on the elements in the group or stack provided
+# if a stack is provided, it is the only argument \1
+# if a group is provided, it is seperated into seperate arguments \0 \1 \2
+stack_call: access_path WS? "->" # call on the stack
+stack_group_call: access_path WS? "<-" # call on the stack but convert its arguments to a group
 
-atom: NUM
-    | str
-    | TRUE
-    | FALSE
-    
-str: STR
-    | var "?"
-    
-COMMENT: /\#[^\n]*/
-%ignore COMMENT
+value: atom | block | group | stack | access_path | set_path | command | stack_command
 
-%import common.SIGNED_NUMBER -> NUM
+atom: INT
+    | STR
+    | constant
+
+constant: TRUE | FALSE | NONE | END
+TRUE: "True"
+FALSE: "False"
+END: "End"
+NONE: "None"
+
+NUM: /[0-9]+/
+INT: NUM
+RAWNUM: NUM
 %import common.ESCAPED_STRING -> STR
 %import common.CNAME -> NAME
-
-
 %import common.WS
+
+
+
+
 """
+
+
+
+
 make_tree = Lark(stretch_grammer, parser="earley").parse
